@@ -444,6 +444,37 @@ async function saveOrder(order) {
   return order;
 }
 
+async function createOrder(order) {
+  const fallbackOrder = { ...order, id: order.id || nextOrderId() };
+
+  if (!apiAvailable) {
+    orders = [fallbackOrder, ...orders];
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(orders));
+    return fallbackOrder;
+  }
+
+  try {
+    const response = await fetch(API_ORDERS_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(order),
+    });
+    apiAvailable = response.ok;
+    if (response.ok) {
+      const savedOrder = await response.json();
+      orders = [savedOrder, ...orders.filter((item) => item.id !== savedOrder.id)];
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(orders));
+      return savedOrder;
+    }
+  } catch {
+    apiAvailable = false;
+  }
+
+  orders = [fallbackOrder, ...orders];
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(orders));
+  return fallbackOrder;
+}
+
 async function patchOrder(id, updates) {
   orders = orders.map((order) => (order.id === id ? { ...order, ...updates } : order));
   localStorage.setItem(STORAGE_KEY, JSON.stringify(orders));
@@ -495,7 +526,6 @@ async function handleSubmit(event) {
   const requester = isInternalUser() ? elements.requester.value.trim() : currentSession.name;
   const existingOrder = existingId ? orders.find((item) => item.id === existingId) : null;
   const order = {
-    id: existingId || nextOrderId(),
     requestDate: existingOrder?.requestDate || todayIso,
     requester,
     phone: currentSession.role === "user" ? currentSession.phone : existingOrder?.phone || "",
@@ -507,9 +537,9 @@ async function handleSubmit(event) {
     items,
   };
 
-  await saveOrder(order);
+  const savedOrder = existingId ? await patchOrder(existingId, { ...order, id: existingId }) : await createOrder(order);
   if (currentSession.role === "user") {
-    alert(`Solicitação ${order.id} enviada com sucesso.`);
+    alert(`Solicitação ${savedOrder.id} enviada com sucesso.`);
     logout();
     return;
   }
@@ -943,13 +973,17 @@ function sortCountObject(data) {
 }
 
 function nextOrderId() {
-  const year = new Date().getFullYear();
-  const currentYearOrders = orders
-    .map((order) => order.id.match(new RegExp(`PED-${year}-(\\d+)`)))
-    .filter(Boolean)
-    .map((match) => Number(match[1]));
-  const next = Math.max(0, ...currentYearOrders) + 1;
-  return `PED-${year}-${String(next).padStart(4, "0")}`;
+  const now = new Date();
+  const stamp = [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, "0"),
+    String(now.getDate()).padStart(2, "0"),
+    "-",
+    String(now.getHours()).padStart(2, "0"),
+    String(now.getMinutes()).padStart(2, "0"),
+    String(now.getSeconds()).padStart(2, "0"),
+  ].join("");
+  return `PED-${stamp}-${Math.random().toString(16).slice(2, 6).toUpperCase()}`;
 }
 
 function exportCsv() {

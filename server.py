@@ -7,6 +7,8 @@ from zipfile import ZIP_DEFLATED, ZipFile
 from io import BytesIO
 from html import escape
 from os import environ
+from datetime import datetime
+from secrets import token_hex
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -88,11 +90,11 @@ class RequestHandler(SimpleHTTPRequestHandler):
                 self.send_error(400, "JSON inválido")
                 return
 
-            if not isinstance(order, dict) or not order.get("id"):
+            if not isinstance(order, dict):
                 self.send_error(400, "Pedido inválido")
                 return
 
-            self.send_json(upsert_order(order), status=201)
+            self.send_json(create_order(order), status=201)
             return
 
         self.send_error(404)
@@ -184,6 +186,26 @@ def write_orders(orders):
 
     with LOCK:
         DATA_FILE.write_text(dumps(orders, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def create_order(order):
+    normalized = normalize_order(order)
+    normalized["id"] = normalized.get("id") or generate_order_id()
+
+    if supabase_enabled():
+        try:
+            return create_order_supabase(normalized)
+        except (HTTPError, URLError, ValueError):
+            pass
+
+    with LOCK:
+        orders = read_local_orders_unlocked()
+        existing_ids = {current.get("id") for current in orders}
+        while normalized["id"] in existing_ids:
+            normalized["id"] = generate_order_id()
+        orders.insert(0, normalized)
+        DATA_FILE.write_text(dumps(orders, ensure_ascii=False, indent=2), encoding="utf-8")
+    return normalized
 
 
 def upsert_order(order):
@@ -310,6 +332,24 @@ def write_orders_supabase(orders):
     )
 
 
+def create_order_supabase(order):
+    for _ in range(5):
+        try:
+            rows = supabase_request(
+                f"/rest/v1/{SUPABASE_TABLE}",
+                method="POST",
+                body=order_to_db(order),
+                extra_headers={"Prefer": "return=representation"},
+            )
+            if rows:
+                return db_to_order(rows[0])
+        except HTTPError as exc:
+            if exc.code != 409:
+                raise
+        order["id"] = generate_order_id()
+    return order
+
+
 def upsert_order_supabase(order):
     rows = supabase_request(
         f"/rest/v1/{SUPABASE_TABLE}?on_conflict=id",
@@ -350,6 +390,11 @@ def normalize_order(order):
         "notes": str(order.get("notes", "") or "").strip(),
         "items": order.get("items") if isinstance(order.get("items"), list) else [],
     }
+
+
+def generate_order_id():
+    now = datetime.now()
+    return f"PED-{now:%Y%m%d-%H%M%S}-{token_hex(2).upper()}"
 
 
 def allowed_order_updates(updates):
