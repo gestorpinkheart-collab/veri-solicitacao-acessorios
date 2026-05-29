@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: veri-solicitacao-acessorios
+    env: python
+    plan: free
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python server.py"
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_ORDERS_TABLE
+        value: accessory_orders
