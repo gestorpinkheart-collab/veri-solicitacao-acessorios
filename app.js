@@ -124,7 +124,6 @@ const elements = {
   itemsList: document.querySelector("#itemsList"),
   itemTemplate: document.querySelector("#itemTemplate"),
   cancelEdit: document.querySelector("#cancelEdit"),
-  newOrder: document.querySelector("#newOrder"),
   exportCsv: document.querySelector("#exportCsv"),
   printReport: document.querySelector("#printReport"),
   exportPdf: document.querySelector("#exportPdf"),
@@ -167,7 +166,13 @@ init();
 async function init() {
   populateOriginOptions();
   populateStatusOptions();
-  orders = await loadOrders();
+  try {
+    orders = await loadOrders(false);
+  } catch (error) {
+    orders = [];
+    apiAvailable = false;
+    console.error(error);
+  }
   applySessionState();
 
   elements.loginForm.addEventListener("submit", handleLogin);
@@ -180,10 +185,6 @@ async function init() {
   elements.addItem.addEventListener("click", () => addItemRow());
   elements.addItemBottom.addEventListener("click", () => addItemRow());
   elements.cancelEdit.addEventListener("click", resetForm);
-  elements.newOrder.addEventListener("click", () => {
-    resetForm();
-    showView("requestView");
-  });
   elements.exportCsv.addEventListener("click", exportCsv);
   elements.printReport.addEventListener("click", () => window.print());
   elements.exportPdf.addEventListener("click", () => window.print());
@@ -357,7 +358,6 @@ function applySessionState() {
   if (!isLoggedIn) return;
 
   elements.activeUser.textContent = `Conectado: ${currentSession.name}`;
-  elements.newOrder.hidden = false;
   document.body.classList.toggle("is-admin", isInternalUser());
   document.body.classList.toggle("is-master", isMasterUser());
   document.body.classList.toggle("is-collaborator", currentSession.role === "collaborator");
@@ -406,8 +406,13 @@ function populateStatusOptions() {
 
 async function refreshOrders() {
   if (!currentSession?.name || !apiAvailable) return;
-  orders = await loadOrders(false);
-  render();
+  try {
+    orders = await loadOrders(false);
+    render();
+  } catch (error) {
+    apiAvailable = false;
+    console.error(error);
+  }
 }
 
 async function loadOrders(seedWhenEmpty = true) {
@@ -960,10 +965,22 @@ function renderOrders() {
             ${statuses.map((status) => `<option ${status === order.status ? "selected" : ""}>${status}</option>`).join("")}
           </select>
         </label>
-        <div class="order-actions">
-          ${canManage ? `<button class="text-button" type="button" data-edit="${order.id}">Editar</button>` : ""}
-          ${isInternalUser() && order.phone ? `<a class="notify-button" href="${whatsappUrl(order)}" target="_blank" rel="noopener noreferrer">Enviar WhatsApp</a>` : ""}
-          ${isMasterUser() ? `<button class="text-button" type="button" data-delete="${order.id}">Excluir</button>` : ""}
+        <div class="order-actions" aria-label="Ações do pedido">
+          ${canManage ? `<button class="action-button" type="button" data-edit="${order.id}" title="Editar" aria-label="Editar pedido">
+            <svg viewBox="0 0 24 24" focusable="false">
+              <path d="m4 16.6-.7 4.1 4.1-.7L18.8 8.6l-3.4-3.4L4 16.6Zm16.1-9.3 1-1a2 2 0 0 0 0-2.8l-.6-.6a2 2 0 0 0-2.8 0l-1 1 3.4 3.4Z"/>
+            </svg>
+          </button>` : ""}
+          ${isInternalUser() && order.phone ? `<a class="action-button whatsapp-action" href="${whatsappUrl(order)}" target="_blank" rel="noopener noreferrer" title="WhatsApp" aria-label="Enviar WhatsApp">
+            <svg viewBox="0 0 24 24" focusable="false">
+              <path d="M12.1 3a8.9 8.9 0 0 0-7.6 13.5L3.4 21l4.6-1.1A8.9 8.9 0 1 0 12.1 3Zm0 2a6.9 6.9 0 1 1-3.5 12.8l-.4-.2-2.1.5.5-2-.3-.4A6.9 6.9 0 0 1 12.1 5Zm-3 3.6c-.2 0-.5.1-.7.3-.2.2-.8.8-.8 1.9s.8 2.2.9 2.4c.1.1 1.6 2.6 4 3.5 2 .8 2.4.6 2.8.6.4 0 1.4-.6 1.6-1.1.2-.6.2-1 .1-1.1-.1-.1-.2-.2-.5-.3l-1.6-.8c-.2-.1-.4-.1-.6.2l-.7.9c-.1.2-.3.2-.5.1-.3-.1-1.1-.4-2-1.2-.7-.7-1.2-1.5-1.4-1.7-.1-.2 0-.4.1-.5l.4-.5c.1-.2.2-.3.3-.5.1-.2.1-.4 0-.5l-.7-1.7c-.2-.4-.4-.4-.7-.4Z"/>
+            </svg>
+          </a>` : ""}
+          ${isMasterUser() ? `<button class="action-button danger-action" type="button" data-delete="${order.id}" title="Excluir" aria-label="Excluir pedido">
+            <svg viewBox="0 0 24 24" focusable="false">
+              <path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm-3 6h12l-.8 11H6.8L6 9Zm4 2v7h2v-7h-2Zm4 0v7h2v-7h-2Z"/>
+            </svg>
+          </button>` : ""}
         </div>
       </div>
     `;
