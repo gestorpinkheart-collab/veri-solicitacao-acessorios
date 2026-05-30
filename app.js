@@ -132,6 +132,9 @@ const elements = {
   searchInput: document.querySelector("#searchInput"),
   filterStatus: document.querySelector("#filterStatus"),
   filterPriority: document.querySelector("#filterPriority"),
+  widgetReceived: document.querySelector("#widgetReceived"),
+  widgetProgress: document.querySelector("#widgetProgress"),
+  widgetDelivered: document.querySelector("#widgetDelivered"),
   dashboardDateFrom: document.querySelector("#dashboardDateFrom"),
   dashboardDateTo: document.querySelector("#dashboardDateTo"),
   dashboardFilterStatus: document.querySelector("#dashboardFilterStatus"),
@@ -725,6 +728,7 @@ async function updateStatus(id, status) {
 
 function render() {
   renderMetrics();
+  renderStatusWidgets();
   renderCharts();
   renderOrders();
   renderDashboardTable();
@@ -788,6 +792,13 @@ function renderMetrics() {
   elements.metricUrgent.textContent = urgent;
   elements.metricOpen.textContent = progress;
   elements.metricPieces.textContent = delivered;
+}
+
+function renderStatusWidgets() {
+  const visibleOrders = getVisibleOrders();
+  elements.widgetReceived.textContent = visibleOrders.filter((order) => order.status === "Pedido Recebido").length;
+  elements.widgetProgress.textContent = visibleOrders.filter((order) => order.status === "Em separação").length;
+  elements.widgetDelivered.textContent = visibleOrders.filter((order) => order.status === "Entregue").length;
 }
 
 function renderCharts() {
@@ -926,13 +937,20 @@ function isMasterUser() {
 }
 
 function buildStatusMessage(order) {
+  const totalPieces = countPieces([order]);
+  const itemSummary = order.items
+    .slice(0, 4)
+    .map((item) => `${item.quantity}x ${item.model} ${item.size} ${item.bath}`)
+    .join("; ");
+  const extraItems = order.items.length > 4 ? `; +${order.items.length - 4} item(ns)` : "";
+  const base = `Olá, ${order.requester}. Aqui é a equipe VERI.\n\nPedido: ${order.id}\nLoja/Setor: ${order.origin}\nItens: ${order.items.length}\nPeças: ${totalPieces}\nResumo: ${itemSummary}${extraItems}`;
   const statusMessages = {
-    "Pedido Recebido": `Olá, ${order.requester}. Seu pedido ${order.id} foi recebido com sucesso pela fábrica. Em breve iniciaremos a separação. Equipe VERI.`,
-    "Em separação": `Olá, ${order.requester}. Seu pedido ${order.id} está em andamento na fábrica. Avisaremos assim que for entregue. Equipe VERI.`,
-    Entregue: `Olá, ${order.requester}. Seu pedido ${order.id} foi entregue. Obrigado por acompanhar pelo sistema VERI.`,
+    "Pedido Recebido": `${base}\n\nStatus: Pedido recebido com sucesso.\nA fábrica já recebeu sua solicitação e fará a conferência para iniciar a separação.\n\nObrigado por acompanhar pelo sistema VERI.`,
+    "Em separação": `${base}\n\nStatus: Em separação.\nSeu pedido está em andamento na fábrica. Avisaremos assim que a etapa for concluída.\n\nEquipe VERI.`,
+    Entregue: `${base}\n\nStatus: Entregue.\nSeu pedido foi finalizado e entregue. Obrigado por utilizar o sistema VERI.`,
   };
 
-  return statusMessages[order.status] || `Olá, ${order.requester}. Seu pedido ${order.id} está com status: ${order.status}. Equipe VERI.`;
+  return statusMessages[order.status] || `${base}\n\nStatus atual: ${order.status}.\n\nEquipe VERI.`;
 }
 
 function whatsappUrl(order) {
