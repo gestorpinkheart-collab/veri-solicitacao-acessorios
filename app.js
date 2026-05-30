@@ -419,8 +419,11 @@ async function loadOrders(seedWhenEmpty = true) {
         const serverOrders = await response.json();
         return Array.isArray(serverOrders) ? normalizeOrders(serverOrders) : [];
       }
-    } catch {
       apiAvailable = false;
+      throw new Error(await apiErrorMessage(response));
+    } catch (error) {
+      apiAvailable = false;
+      throw error;
     }
   }
 
@@ -438,6 +441,16 @@ function loadLocalOrders() {
   } catch {
     return [];
   }
+}
+
+async function apiErrorMessage(response) {
+  try {
+    const payload = await response.json();
+    if (payload?.error) return payload.error;
+  } catch {
+    // Keep the fallback message below when the server did not return JSON.
+  }
+  return `Erro ${response.status} ao comunicar com o servidor.`;
 }
 
 async function saveOrders() {
@@ -484,6 +497,9 @@ async function createOrder(order) {
   const fallbackOrder = { ...order, id: order.id || nextOrderId() };
 
   if (!apiAvailable) {
+    if (location.protocol.startsWith("http")) {
+      throw new Error("API indisponível. Confira a conexão do Render com o Supabase.");
+    }
     orders = [fallbackOrder, ...orders];
     localStorage.setItem(STORAGE_KEY, JSON.stringify(orders));
     return fallbackOrder;
@@ -502,8 +518,10 @@ async function createOrder(order) {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(orders));
       return savedOrder;
     }
-  } catch {
+    throw new Error(await apiErrorMessage(response));
+  } catch (error) {
     apiAvailable = false;
+    if (location.protocol.startsWith("http")) throw error;
   }
 
   orders = [fallbackOrder, ...orders];
@@ -515,7 +533,12 @@ async function patchOrder(id, updates) {
   orders = orders.map((order) => (order.id === id ? { ...order, ...updates } : order));
   localStorage.setItem(STORAGE_KEY, JSON.stringify(orders));
 
-  if (!apiAvailable) return orders.find((order) => order.id === id);
+  if (!apiAvailable) {
+    if (location.protocol.startsWith("http")) {
+      throw new Error("API indisponível. Confira a conexão do Render com o Supabase.");
+    }
+    return orders.find((order) => order.id === id);
+  }
 
   try {
     const response = await fetch(`${API_ORDERS_URL}/${encodeURIComponent(id)}`, {
@@ -525,8 +548,10 @@ async function patchOrder(id, updates) {
     });
     apiAvailable = response.ok;
     if (response.ok) return await response.json();
-  } catch {
+    throw new Error(await apiErrorMessage(response));
+  } catch (error) {
     apiAvailable = false;
+    if (location.protocol.startsWith("http")) throw error;
   }
 
   return orders.find((order) => order.id === id);
@@ -536,13 +561,20 @@ async function removeOrder(id) {
   orders = orders.filter((order) => order.id !== id);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(orders));
 
-  if (!apiAvailable) return;
+  if (!apiAvailable) {
+    if (location.protocol.startsWith("http")) {
+      throw new Error("API indisponível. Confira a conexão do Render com o Supabase.");
+    }
+    return;
+  }
 
   try {
     const response = await fetch(`${API_ORDERS_URL}/${encodeURIComponent(id)}`, { method: "DELETE" });
     apiAvailable = response.ok;
-  } catch {
+    if (!response.ok) throw new Error(await apiErrorMessage(response));
+  } catch (error) {
     apiAvailable = false;
+    if (location.protocol.startsWith("http")) throw error;
   }
 }
 
@@ -569,7 +601,12 @@ async function logAccess(session) {
 async function handleSubmit(event) {
   event.preventDefault();
   if (!currentSession?.name) return;
-  orders = await loadOrders();
+  try {
+    orders = await loadOrders();
+  } catch (error) {
+    alert(`Não foi possível carregar os pedidos do banco.\n\n${error.message}`);
+    return;
+  }
 
   const items = getItemsFromForm();
 
@@ -595,7 +632,13 @@ async function handleSubmit(event) {
     updatedByRole: currentSession.role,
   };
 
-  const savedOrder = existingId ? await patchOrder(existingId, { ...order, id: existingId }) : await createOrder(order);
+  let savedOrder;
+  try {
+    savedOrder = existingId ? await patchOrder(existingId, { ...order, id: existingId }) : await createOrder(order);
+  } catch (error) {
+    alert(`Não foi possível salvar o pedido no banco.\n\n${error.message}`);
+    return;
+  }
   if (currentSession.role === "collaborator") {
     alert(`Solicitação ${savedOrder.id} enviada com sucesso.`);
     resetForm();
@@ -716,13 +759,21 @@ function editOrder(id) {
 async function deleteOrder(id) {
   if (!isMasterUser()) return;
   if (!confirm("Excluir este pedido?")) return;
-  await removeOrder(id);
+  try {
+    await removeOrder(id);
+  } catch (error) {
+    alert(`Não foi possível excluir o pedido no banco.\n\n${error.message}`);
+  }
   render();
 }
 
 async function updateStatus(id, status) {
   if (!isInternalUser()) return;
-  await patchOrder(id, { status, updatedBy: currentSession.name, updatedByRole: currentSession.role });
+  try {
+    await patchOrder(id, { status, updatedBy: currentSession.name, updatedByRole: currentSession.role });
+  } catch (error) {
+    alert(`Não foi possível alterar o status no banco.\n\n${error.message}`);
+  }
   render();
 }
 

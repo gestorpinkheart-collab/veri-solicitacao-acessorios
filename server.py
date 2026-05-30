@@ -36,6 +36,10 @@ SUPABASE_TABLE = environ.get("SUPABASE_ORDERS_TABLE", "accessory_orders")
 SUPABASE_ACCESS_LOGS_TABLE = environ.get("SUPABASE_ACCESS_LOGS_TABLE", "accessory_access_logs")
 
 
+class StorageError(RuntimeError):
+    pass
+
+
 class RequestHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT), **kwargs)
@@ -44,7 +48,10 @@ class RequestHandler(SimpleHTTPRequestHandler):
         parsed = urlparse(self.path)
 
         if parsed.path == "/api/orders":
-            self.send_json(read_orders())
+            try:
+                self.send_json(read_orders())
+            except StorageError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=503)
             return
 
         if parsed.path == "/api/health":
@@ -54,13 +61,19 @@ class RequestHandler(SimpleHTTPRequestHandler):
         if parsed.path == "/api/status":
             filters = parse_qs(parsed.query)
             phone = only_digits(filters.get("phone", [""])[0])
-            orders = [order for order in read_orders() if only_digits(order.get("phone")) == phone]
-            self.send_json(orders)
+            try:
+                orders = [order for order in read_orders() if only_digits(order.get("phone")) == phone]
+                self.send_json(orders)
+            except StorageError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=503)
             return
 
         if parsed.path == "/api/report.xlsx":
             filters = parse_qs(parsed.query)
-            self.send_xlsx(filter_orders(read_orders(), filters))
+            try:
+                self.send_xlsx(filter_orders(read_orders(), filters))
+            except StorageError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=503)
             return
 
         super().do_GET()
@@ -77,8 +90,11 @@ class RequestHandler(SimpleHTTPRequestHandler):
                 self.send_error(400, "A lista de pedidos é obrigatória")
                 return
 
-            write_orders(orders)
-            self.send_json({"ok": True})
+            try:
+                write_orders(orders)
+                self.send_json({"ok": True})
+            except StorageError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=503)
             return
 
         self.send_error(404)
@@ -106,7 +122,10 @@ class RequestHandler(SimpleHTTPRequestHandler):
                 self.send_error(400, "Pedido inválido")
                 return
 
-            self.send_json(create_order(order), status=201)
+            try:
+                self.send_json(create_order(order), status=201)
+            except StorageError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=503)
             return
 
         self.send_error(404)
@@ -126,7 +145,11 @@ class RequestHandler(SimpleHTTPRequestHandler):
                 self.send_error(400, "JSON inválido")
                 return
 
-            updated = update_order(order_id, updates)
+            try:
+                updated = update_order(order_id, updates)
+            except StorageError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=503)
+                return
             if not updated:
                 self.send_error(404, "Pedido não encontrado")
                 return
@@ -144,8 +167,11 @@ class RequestHandler(SimpleHTTPRequestHandler):
                 self.send_error(400, "Pedido obrigatório")
                 return
 
-            delete_order(order_id)
-            self.send_json({"ok": True})
+            try:
+                delete_order(order_id)
+                self.send_json({"ok": True})
+            except StorageError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=503)
             return
 
         self.send_error(404)
@@ -181,8 +207,8 @@ def read_orders():
     if supabase_enabled():
         try:
             return read_orders_supabase()
-        except (HTTPError, URLError, ValueError):
-            pass
+        except (HTTPError, URLError, ValueError) as exc:
+            raise storage_error("ler pedidos no Supabase", exc) from exc
 
     with LOCK:
         return read_local_orders_unlocked()
@@ -193,8 +219,8 @@ def write_orders(orders):
         try:
             write_orders_supabase(orders)
             return
-        except (HTTPError, URLError, ValueError):
-            pass
+        except (HTTPError, URLError, ValueError) as exc:
+            raise storage_error("salvar pedidos no Supabase", exc) from exc
 
     with LOCK:
         DATA_FILE.write_text(dumps(orders, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -214,8 +240,8 @@ def create_order(order):
     if supabase_enabled():
         try:
             return create_order_supabase(normalized)
-        except (HTTPError, URLError, ValueError):
-            pass
+        except (HTTPError, URLError, ValueError) as exc:
+            raise storage_error("criar pedido no Supabase", exc) from exc
 
     with LOCK:
         orders = read_local_orders_unlocked()
@@ -232,8 +258,8 @@ def upsert_order(order):
     if supabase_enabled():
         try:
             return upsert_order_supabase(normalized)
-        except (HTTPError, URLError, ValueError):
-            pass
+        except (HTTPError, URLError, ValueError) as exc:
+            raise storage_error("atualizar pedido no Supabase", exc) from exc
 
     with LOCK:
         orders = read_local_orders_unlocked()
@@ -256,8 +282,8 @@ def update_order(order_id, updates):
     if supabase_enabled():
         try:
             return update_order_supabase(order_id, updates, actor, actor_role)
-        except (HTTPError, URLError, ValueError):
-            pass
+        except (HTTPError, URLError, ValueError) as exc:
+            raise storage_error("alterar pedido no Supabase", exc) from exc
 
     with LOCK:
         orders = read_local_orders_unlocked()
@@ -278,8 +304,8 @@ def delete_order(order_id):
         try:
             delete_order_supabase(order_id)
             return
-        except (HTTPError, URLError, ValueError):
-            pass
+        except (HTTPError, URLError, ValueError) as exc:
+            raise storage_error("excluir pedido no Supabase", exc) from exc
 
     with LOCK:
         orders = read_local_orders_unlocked()
@@ -303,12 +329,23 @@ def supabase_enabled():
     return bool(SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY)
 
 
+def storage_error(action, exc):
+    details = ""
+    if isinstance(exc, HTTPError):
+        body = exc.read().decode("utf-8", errors="replace")
+        details = f" HTTP {exc.code}: {body[:300]}"
+    else:
+        details = f" {exc}"
+    return StorageError(f"Nao foi possivel {action}.{details}")
+
+
 def health_status():
     status = {
         "ok": True,
         "supabaseConfigured": supabase_enabled(),
         "supabaseConnected": False,
         "storage": "local",
+        "error": "",
     }
     if not supabase_enabled():
         return status
@@ -317,8 +354,9 @@ def health_status():
         read_orders_supabase()
         status["supabaseConnected"] = True
         status["storage"] = "supabase"
-    except (HTTPError, URLError, ValueError):
-        pass
+    except (HTTPError, URLError, ValueError) as exc:
+        status["ok"] = False
+        status["error"] = str(storage_error("conectar ao Supabase", exc))
 
     return status
 
@@ -463,7 +501,7 @@ def write_access_log(access):
 def normalize_order(order):
     return {
         "id": str(order.get("id", "")).strip(),
-        "requestDate": str(order.get("requestDate", "")).strip(),
+        "requestDate": str(order.get("requestDate", "")).strip() or datetime.now().date().isoformat(),
         "requester": str(order.get("requester", "")).strip(),
         "phone": only_digits(order.get("phone", "")),
         "origin": str(order.get("origin", "")).strip(),
