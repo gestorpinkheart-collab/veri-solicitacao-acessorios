@@ -33,6 +33,7 @@ load_env_file()
 SUPABASE_URL = environ.get("SUPABASE_URL", "").rstrip("/")
 SUPABASE_SERVICE_ROLE_KEY = environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 SUPABASE_TABLE = environ.get("SUPABASE_ORDERS_TABLE", "accessory_orders")
+SUPABASE_ACCESS_LOGS_TABLE = environ.get("SUPABASE_ACCESS_LOGS_TABLE", "accessory_access_logs")
 
 
 class RequestHandler(SimpleHTTPRequestHandler):
@@ -83,6 +84,17 @@ class RequestHandler(SimpleHTTPRequestHandler):
         self.send_error(404)
 
     def do_POST(self):
+        if self.path == "/api/access-logs":
+            try:
+                access = self.read_json_body()
+            except ValueError:
+                self.send_error(400, "JSON inválido")
+                return
+
+            write_access_log(access)
+            self.send_json({"ok": True}, status=201)
+            return
+
         if self.path == "/api/orders":
             try:
                 order = self.read_json_body()
@@ -191,6 +203,13 @@ def write_orders(orders):
 def create_order(order):
     normalized = normalize_order(order)
     normalized["id"] = normalized.get("id") or generate_order_id()
+    append_history(
+        normalized,
+        "Pedido criado",
+        normalized.get("updatedBy") or normalized.get("requester"),
+        normalized.get("updatedByRole") or "collaborator",
+        {"status": normalized.get("status"), "items": len(normalized.get("items", []))},
+    )
 
     if supabase_enabled():
         try:
@@ -231,9 +250,12 @@ def upsert_order(order):
 
 
 def update_order(order_id, updates):
+    updates = {**updates}
+    actor = updates.pop("updatedBy", "")
+    actor_role = updates.pop("updatedByRole", "")
     if supabase_enabled():
         try:
-            return update_order_supabase(order_id, updates)
+            return update_order_supabase(order_id, updates, actor, actor_role)
         except (HTTPError, URLError, ValueError):
             pass
 
@@ -243,6 +265,7 @@ def update_order(order_id, updates):
         for index, current in enumerate(orders):
             if current.get("id") == order_id:
                 updated = {**current, **allowed_order_updates(updates)}
+                append_history(updated, history_action(updates), actor, actor_role, allowed_order_updates(updates))
                 orders[index] = updated
                 break
         if updated:
@@ -344,29 +367,65 @@ def create_order_supabase(order):
             if rows:
                 return db_to_order(rows[0])
         except HTTPError as exc:
-            if exc.code != 409:
+            error_body = exc.read().decode("utf-8", errors="replace")
+            if exc.code == 400 and "history" in error_body:
+                rows = supabase_request(
+                    f"/rest/v1/{SUPABASE_TABLE}",
+                    method="POST",
+                    body=order_to_db(order, include_history=False),
+                    extra_headers={"Prefer": "return=representation"},
+                )
+                if rows:
+                    return db_to_order(rows[0])
+            elif exc.code != 409:
                 raise
         order["id"] = generate_order_id()
     return order
 
 
 def upsert_order_supabase(order):
-    rows = supabase_request(
-        f"/rest/v1/{SUPABASE_TABLE}?on_conflict=id",
-        method="POST",
-        body=order_to_db(order),
-        extra_headers={"Prefer": "return=representation,resolution=merge-duplicates"},
-    )
+    try:
+        rows = supabase_request(
+            f"/rest/v1/{SUPABASE_TABLE}?on_conflict=id",
+            method="POST",
+            body=order_to_db(order),
+            extra_headers={"Prefer": "return=representation,resolution=merge-duplicates"},
+        )
+    except HTTPError as exc:
+        if exc.code != 400:
+            raise
+        rows = supabase_request(
+            f"/rest/v1/{SUPABASE_TABLE}?on_conflict=id",
+            method="POST",
+            body=order_to_db(order, include_history=False),
+            extra_headers={"Prefer": "return=representation,resolution=merge-duplicates"},
+        )
     return db_to_order(rows[0]) if rows else order
 
 
-def update_order_supabase(order_id, updates):
-    rows = supabase_request(
-        f"/rest/v1/{SUPABASE_TABLE}?id=eq.{quote(order_id, safe='')}",
-        method="PATCH",
-        body=updates_to_db(updates),
-        extra_headers={"Prefer": "return=representation"},
-    )
+def update_order_supabase(order_id, updates, actor="", actor_role=""):
+    current_rows = supabase_request(f"/rest/v1/{SUPABASE_TABLE}?id=eq.{quote(order_id, safe='')}&select=*")
+    if not current_rows:
+        return None
+    current = db_to_order(current_rows[0])
+    merged = {**current, **allowed_order_updates(updates)}
+    append_history(merged, history_action(updates), actor, actor_role, allowed_order_updates(updates))
+    try:
+        rows = supabase_request(
+            f"/rest/v1/{SUPABASE_TABLE}?id=eq.{quote(order_id, safe='')}",
+            method="PATCH",
+            body=updates_to_db({**updates, "history": merged.get("history", [])}),
+            extra_headers={"Prefer": "return=representation"},
+        )
+    except HTTPError as exc:
+        if exc.code != 400:
+            raise
+        rows = supabase_request(
+            f"/rest/v1/{SUPABASE_TABLE}?id=eq.{quote(order_id, safe='')}",
+            method="PATCH",
+            body=updates_to_db(updates, include_history=False),
+            extra_headers={"Prefer": "return=representation"},
+        )
     return db_to_order(rows[0]) if rows else None
 
 
@@ -376,6 +435,29 @@ def delete_order_supabase(order_id):
         method="DELETE",
         extra_headers={"Prefer": "return=minimal"},
     )
+
+
+def write_access_log(access):
+    if not isinstance(access, dict):
+        return
+    payload = {
+        "user_name": str(access.get("userName", "") or "").strip(),
+        "login": str(access.get("login", "") or "").strip(),
+        "role": str(access.get("role", "") or "").strip(),
+        "phone": only_digits(access.get("phone", "")),
+        "origin": str(access.get("origin", "") or "").strip(),
+        "user_agent": str(access.get("userAgent", "") or "").strip(),
+    }
+    if supabase_enabled():
+        try:
+            supabase_request(
+                f"/rest/v1/{SUPABASE_ACCESS_LOGS_TABLE}",
+                method="POST",
+                body=payload,
+                extra_headers={"Prefer": "return=minimal"},
+            )
+        except (HTTPError, URLError, ValueError):
+            pass
 
 
 def normalize_order(order):
@@ -389,6 +471,9 @@ def normalize_order(order):
         "status": str(order.get("status", "")).strip(),
         "notes": str(order.get("notes", "") or "").strip(),
         "items": order.get("items") if isinstance(order.get("items"), list) else [],
+        "history": order.get("history") if isinstance(order.get("history"), list) else [],
+        "updatedBy": str(order.get("updatedBy", "") or "").strip(),
+        "updatedByRole": str(order.get("updatedByRole", "") or "").strip(),
     }
 
 
@@ -397,11 +482,33 @@ def generate_order_id():
     return f"PED-{now:%Y%m%d-%H%M%S}-{token_hex(2).upper()}"
 
 
+def append_history(order, action, actor="", actor_role="", details=None):
+    history = order.get("history") if isinstance(order.get("history"), list) else []
+    history.append(
+        {
+            "at": datetime.now().isoformat(timespec="seconds"),
+            "action": action,
+            "user": actor or "Sistema",
+            "role": actor_role or "",
+            "details": details or {},
+        }
+    )
+    order["history"] = history
+
+
+def history_action(updates):
+    if "status" in updates:
+        return f"Status alterado para {updates.get('status')}"
+    if "items" in updates:
+        return "Itens do pedido atualizados"
+    return "Pedido atualizado"
+
+
 def allowed_order_updates(updates):
     if not isinstance(updates, dict):
         return {}
     allowed = {}
-    for key in ("requestDate", "requester", "phone", "origin", "priority", "status", "notes", "items"):
+    for key in ("requestDate", "requester", "phone", "origin", "priority", "status", "notes", "items", "history"):
         if key in updates:
             allowed[key] = updates[key]
     if "phone" in allowed:
@@ -409,7 +516,7 @@ def allowed_order_updates(updates):
     return allowed
 
 
-def updates_to_db(updates):
+def updates_to_db(updates, include_history=True):
     db_updates = {}
     allowed = allowed_order_updates(updates)
     field_map = {
@@ -421,14 +528,17 @@ def updates_to_db(updates):
         "status": "status",
         "notes": "notes",
         "items": "items",
+        "history": "history",
     }
     for key, value in allowed.items():
+        if key == "history" and not include_history:
+            continue
         db_updates[field_map[key]] = value
     return db_updates
 
 
-def order_to_db(order):
-    return {
+def order_to_db(order, include_history=True):
+    data = {
         "id": order.get("id", ""),
         "request_date": order.get("requestDate", ""),
         "requester": order.get("requester", ""),
@@ -439,6 +549,9 @@ def order_to_db(order):
         "notes": order.get("notes", ""),
         "items": order.get("items", []),
     }
+    if include_history:
+        data["history"] = order.get("history", [])
+    return data
 
 
 def db_to_order(row):
@@ -452,6 +565,7 @@ def db_to_order(row):
         "status": row.get("status", ""),
         "notes": row.get("notes", ""),
         "items": row.get("items") or [],
+        "history": row.get("history") or [],
     }
 
 

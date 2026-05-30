@@ -2,9 +2,10 @@ const STORAGE_KEY = "factoryPartOrders";
 const SESSION_KEY = "factoryPartOrdersSession";
 const USERS_KEY = "factoryPartOrdersUsersV2";
 const API_ORDERS_URL = "/api/orders";
+const API_ACCESS_LOGS_URL = "/api/access-logs";
 const defaultUsers = [
-  { login: "Charles Marinho", password: "12345", name: "Charles Marinho", role: "admin", mustChangePassword: true },
-  { login: "Juliano", password: "12345", name: "Juliano", role: "operator", mustChangePassword: true },
+  { login: "Charles Marinho", password: "12345", name: "Charles Marinho", role: "master", mustChangePassword: true },
+  { login: "Juliano", password: "12345", name: "Juliano", role: "consultant", mustChangePassword: true },
 ];
 
 const statuses = [
@@ -93,7 +94,8 @@ const elements = {
   loginForm: document.querySelector("#loginForm"),
   passwordForm: document.querySelector("#passwordForm"),
   commonLoginTab: document.querySelector("#commonLoginTab"),
-  internalLoginTab: document.querySelector("#internalLoginTab"),
+  consultantLoginTab: document.querySelector("#consultantLoginTab"),
+  masterLoginTab: document.querySelector("#masterLoginTab"),
   commonLoginFields: document.querySelector("#commonLoginFields"),
   internalLoginFields: document.querySelector("#internalLoginFields"),
   loginName: document.querySelector("#loginName"),
@@ -130,6 +132,11 @@ const elements = {
   searchInput: document.querySelector("#searchInput"),
   filterStatus: document.querySelector("#filterStatus"),
   filterPriority: document.querySelector("#filterPriority"),
+  dashboardDateFrom: document.querySelector("#dashboardDateFrom"),
+  dashboardDateTo: document.querySelector("#dashboardDateTo"),
+  dashboardFilterStatus: document.querySelector("#dashboardFilterStatus"),
+  dashboardFilterOrigin: document.querySelector("#dashboardFilterOrigin"),
+  dashboardFilterRequester: document.querySelector("#dashboardFilterRequester"),
   reportSearchInput: document.querySelector("#reportSearchInput"),
   reportFilterStatus: document.querySelector("#reportFilterStatus"),
   reportFilterPriority: document.querySelector("#reportFilterPriority"),
@@ -162,8 +169,9 @@ async function init() {
 
   elements.loginForm.addEventListener("submit", handleLogin);
   elements.passwordForm.addEventListener("submit", handlePasswordChange);
-  elements.commonLoginTab.addEventListener("click", () => setLoginMode("common"));
-  elements.internalLoginTab.addEventListener("click", () => setLoginMode("internal"));
+  document.querySelectorAll("[data-login-mode]").forEach((button) => {
+    button.addEventListener("click", () => setLoginMode(button.dataset.loginMode));
+  });
   elements.logout.addEventListener("click", logout);
   elements.form.addEventListener("submit", handleSubmit);
   elements.addItem.addEventListener("click", () => addItemRow());
@@ -180,6 +188,11 @@ async function init() {
   elements.searchInput.addEventListener("input", render);
   elements.filterStatus.addEventListener("change", render);
   elements.filterPriority.addEventListener("change", render);
+  elements.dashboardDateFrom.addEventListener("change", render);
+  elements.dashboardDateTo.addEventListener("change", render);
+  elements.dashboardFilterStatus.addEventListener("change", render);
+  elements.dashboardFilterOrigin.addEventListener("change", render);
+  elements.dashboardFilterRequester.addEventListener("input", render);
   elements.reportSearchInput.addEventListener("input", renderReports);
   elements.reportFilterStatus.addEventListener("change", renderReports);
   elements.reportFilterPriority.addEventListener("change", renderReports);
@@ -219,10 +232,18 @@ function loadUsers() {
 
   try {
     const parsed = JSON.parse(saved);
-    return Array.isArray(parsed) ? parsed : defaultUsers;
+    return Array.isArray(parsed) ? normalizeUsers(parsed) : defaultUsers;
   } catch {
     return defaultUsers;
   }
+}
+
+function normalizeUsers(userList) {
+  const legacyRoleMap = { admin: "master", operator: "consultant" };
+  const normalized = userList.map((user) => ({ ...user, role: legacyRoleMap[user.role] || user.role }));
+  const byLogin = new Map(defaultUsers.map((user) => [normalizeText(user.login), user]));
+  normalized.forEach((user) => byLogin.set(normalizeText(user.login), { ...byLogin.get(normalizeText(user.login)), ...user }));
+  return [...byLogin.values()];
 }
 
 function saveUsers() {
@@ -233,11 +254,12 @@ function saveSession(session) {
   currentSession = session;
   sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
   applySessionState();
+  logAccess(session);
 }
 
 function handleLogin(event) {
   event.preventDefault();
-  if (activeLoginMode === "internal") {
+  if (activeLoginMode === "consultant" || activeLoginMode === "master") {
     handleInternalLogin();
     return;
   }
@@ -255,7 +277,7 @@ function handleLogin(event) {
     return;
   }
 
-  saveSession({ name, phone, role: "user" });
+  saveSession({ name, phone, role: "collaborator" });
 }
 
 function handleInternalLogin() {
@@ -263,7 +285,7 @@ function handleInternalLogin() {
   const password = elements.masterPassword.value;
   const user = users.find((item) => normalizeText(item.login) === normalizeText(login));
 
-  if (!user || user.password !== password) {
+  if (!user || user.password !== password || user.role !== activeLoginMode) {
     showLoginError("Login ou senha inválidos.");
     return;
   }
@@ -286,9 +308,14 @@ function setLoginMode(mode) {
   activeLoginMode = mode;
   elements.loginError.textContent = "";
   elements.commonLoginTab.classList.toggle("active", mode === "common");
-  elements.internalLoginTab.classList.toggle("active", mode === "internal");
+  elements.consultantLoginTab.classList.toggle("active", mode === "consultant");
+  elements.masterLoginTab.classList.toggle("active", mode === "master");
   elements.commonLoginFields.classList.toggle("active-login-mode", mode === "common");
-  elements.internalLoginFields.classList.toggle("active-login-mode", mode === "internal");
+  elements.internalLoginFields.classList.toggle("active-login-mode", mode === "consultant" || mode === "master");
+  elements.internalLogin.value = "";
+  elements.masterPassword.value = "";
+  elements.loginName.value = "";
+  elements.loginPhone.value = "";
 }
 
 function handlePasswordChange(event) {
@@ -327,8 +354,10 @@ function applySessionState() {
   if (!isLoggedIn) return;
 
   elements.activeUser.textContent = `Conectado: ${currentSession.name}`;
-  elements.newOrder.hidden = isInternalUser();
+  elements.newOrder.hidden = false;
   document.body.classList.toggle("is-admin", isInternalUser());
+  document.body.classList.toggle("is-master", isMasterUser());
+  document.body.classList.toggle("is-collaborator", currentSession.role === "collaborator");
   showView(isInternalUser() ? "managementView" : "requestView");
   resetForm();
   render();
@@ -351,12 +380,15 @@ function logout() {
   elements.passwordScreen.hidden = true;
   elements.entryScreen.hidden = false;
   document.body.classList.remove("is-admin");
+  document.body.classList.remove("is-master");
+  document.body.classList.remove("is-collaborator");
   elements.loginName.focus();
 }
 
 function populateOriginOptions() {
   for (const origin of origins) {
     elements.origin.append(new Option(origin, origin));
+    elements.dashboardFilterOrigin.append(new Option(origin, origin));
   }
 }
 
@@ -365,6 +397,7 @@ function populateStatusOptions() {
     elements.status.append(new Option(status, status));
     elements.filterStatus.append(new Option(status, status));
     elements.reportFilterStatus.append(new Option(status, status));
+    elements.dashboardFilterStatus.append(new Option(status, status));
   }
 }
 
@@ -510,6 +543,26 @@ async function removeOrder(id) {
   }
 }
 
+async function logAccess(session) {
+  if (!location.protocol.startsWith("http")) return;
+  try {
+    await fetch(API_ACCESS_LOGS_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        userName: session.name,
+        login: session.login || session.name,
+        role: session.role,
+        phone: session.phone || "",
+        origin: location.href,
+        userAgent: navigator.userAgent,
+      }),
+    });
+  } catch {
+    // Access logs are audit support; login should not fail if logging is unavailable.
+  }
+}
+
 async function handleSubmit(event) {
   event.preventDefault();
   if (!currentSession?.name) return;
@@ -528,19 +581,22 @@ async function handleSubmit(event) {
   const order = {
     requestDate: existingOrder?.requestDate || todayIso,
     requester,
-    phone: currentSession.role === "user" ? currentSession.phone : existingOrder?.phone || "",
+    phone: currentSession.role === "collaborator" ? currentSession.phone : existingOrder?.phone || "",
     origin: elements.origin.value,
     priority: elements.priority.value,
     dueDate: "",
     status: isInternalUser() ? elements.status.value : statuses[0],
     notes: elements.notes.value.trim(),
     items,
+    updatedBy: currentSession.name,
+    updatedByRole: currentSession.role,
   };
 
   const savedOrder = existingId ? await patchOrder(existingId, { ...order, id: existingId }) : await createOrder(order);
-  if (currentSession.role === "user") {
+  if (currentSession.role === "collaborator") {
     alert(`Solicitação ${savedOrder.id} enviada com sucesso.`);
-    logout();
+    resetForm();
+    await refreshOrders();
     return;
   }
   resetForm();
@@ -571,7 +627,7 @@ function addItemRow(item = {}) {
   row.querySelector(".remove-item").addEventListener("click", () => {
     if (elements.itemsList.children.length > 1) row.remove();
   });
-  elements.itemsList.append(row);
+  elements.itemsList.prepend(row);
 }
 
 function populateBathOptions(select, selectedBath = "") {
@@ -655,7 +711,7 @@ function editOrder(id) {
 }
 
 async function deleteOrder(id) {
-  if (currentSession?.role !== "admin") return;
+  if (!isMasterUser()) return;
   if (!confirm("Excluir este pedido?")) return;
   await removeOrder(id);
   render();
@@ -663,7 +719,7 @@ async function deleteOrder(id) {
 
 async function updateStatus(id, status) {
   if (!isInternalUser()) return;
-  await patchOrder(id, { status });
+  await patchOrder(id, { status, updatedBy: currentSession.name, updatedByRole: currentSession.role });
   render();
 }
 
@@ -703,8 +759,27 @@ function getVisibleOrders() {
   return orders.filter((order) => normalizePhone(order.phone) === normalizePhone(currentSession?.phone || ""));
 }
 
+function getDashboardOrders() {
+  const dateFrom = elements.dashboardDateFrom.value;
+  const dateTo = elements.dashboardDateTo.value;
+  const status = elements.dashboardFilterStatus.value;
+  const origin = elements.dashboardFilterOrigin.value;
+  const requester = normalizeText(elements.dashboardFilterRequester.value);
+
+  return getVisibleOrders().filter((order) => {
+    const orderDate = order.requestDate || "";
+    return (
+      (!dateFrom || orderDate >= dateFrom) &&
+      (!dateTo || orderDate <= dateTo) &&
+      (!status || order.status === status) &&
+      (!origin || order.origin === origin) &&
+      (!requester || normalizeText(order.requester).includes(requester))
+    );
+  });
+}
+
 function renderMetrics() {
-  const visibleOrders = getVisibleOrders();
+  const visibleOrders = getDashboardOrders();
   const urgent = visibleOrders.filter((order) => order.priority === "Urgente").length;
   const newOpen = visibleOrders.filter((order) => order.status === "Pedido Recebido").length;
   const progress = visibleOrders.filter((order) => order.status === "Em separação").length;
@@ -826,7 +901,7 @@ function renderOrders() {
         <div class="order-actions">
           ${canManage ? `<button class="text-button" type="button" data-edit="${order.id}">Editar</button>` : ""}
           ${isInternalUser() && order.phone ? `<a class="notify-button" href="${whatsappUrl(order)}" target="_blank" rel="noopener noreferrer">Enviar WhatsApp</a>` : ""}
-          ${currentSession?.role === "admin" ? `<button class="text-button" type="button" data-delete="${order.id}">Excluir</button>` : ""}
+          ${isMasterUser() ? `<button class="text-button" type="button" data-delete="${order.id}">Excluir</button>` : ""}
         </div>
       </div>
     `;
@@ -843,7 +918,11 @@ function canManageOrder(order) {
 }
 
 function isInternalUser() {
-  return currentSession?.role === "admin" || currentSession?.role === "operator";
+  return currentSession?.role === "master" || currentSession?.role === "consultant";
+}
+
+function isMasterUser() {
+  return currentSession?.role === "master";
 }
 
 function buildStatusMessage(order) {
@@ -916,7 +995,7 @@ function countPieces(orderList) {
 }
 
 function countByStatus() {
-  const visibleOrders = getVisibleOrders();
+  const visibleOrders = getDashboardOrders();
   return statuses.reduce((acc, status) => {
     acc[status] = visibleOrders.filter((order) => order.status === status).length;
     return acc;
@@ -924,7 +1003,7 @@ function countByStatus() {
 }
 
 function countByBath() {
-  return getVisibleOrders().reduce((acc, order) => {
+  return getDashboardOrders().reduce((acc, order) => {
     order.items.forEach((item) => {
       acc[item.bath] = (acc[item.bath] || 0) + item.quantity;
     });
@@ -933,7 +1012,7 @@ function countByBath() {
 }
 
 function countByOrigin() {
-  const counts = getVisibleOrders().reduce((acc, order) => {
+  const counts = getDashboardOrders().reduce((acc, order) => {
     const origin = order.origin || "Sem loja";
     acc[origin] = (acc[origin] || 0) + 1;
     return acc;
@@ -942,7 +1021,7 @@ function countByOrigin() {
 }
 
 function countByDate() {
-  const counts = getVisibleOrders().reduce((acc, order) => {
+  const counts = getDashboardOrders().reduce((acc, order) => {
     const date = formatDate(order.requestDate) || "Sem data";
     acc[date] = (acc[date] || 0) + 1;
     return acc;
@@ -951,7 +1030,7 @@ function countByDate() {
 }
 
 function countByRequester() {
-  const counts = getVisibleOrders().reduce((acc, order) => {
+  const counts = getDashboardOrders().reduce((acc, order) => {
     const requester = order.requester || "Sem solicitante";
     acc[requester] = (acc[requester] || 0) + 1;
     return acc;
@@ -960,7 +1039,7 @@ function countByRequester() {
 }
 
 function countPiecesByRequester() {
-  const counts = getVisibleOrders().reduce((acc, order) => {
+  const counts = getDashboardOrders().reduce((acc, order) => {
     const requester = order.requester || "Sem solicitante";
     acc[requester] = (acc[requester] || 0) + countPieces([order]);
     return acc;

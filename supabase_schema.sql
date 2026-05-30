@@ -8,9 +8,13 @@ create table if not exists public.accessory_orders (
   status text not null check (status in ('Pedido Recebido', 'Em separação', 'Entregue')),
   notes text default '',
   items jsonb not null default '[]'::jsonb,
+  history jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.accessory_orders
+add column if not exists history jsonb not null default '[]'::jsonb;
 
 create index if not exists accessory_orders_phone_idx on public.accessory_orders (phone);
 create index if not exists accessory_orders_status_idx on public.accessory_orders (status);
@@ -37,6 +41,29 @@ alter table public.accessory_orders enable row level security;
 drop policy if exists "service role manages accessory orders" on public.accessory_orders;
 create policy "service role manages accessory orders"
 on public.accessory_orders
+for all
+using (auth.role() = 'service_role')
+with check (auth.role() = 'service_role');
+
+create table if not exists public.accessory_access_logs (
+  id bigserial primary key,
+  user_name text not null,
+  login text,
+  role text,
+  phone text,
+  origin text,
+  user_agent text,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists accessory_access_logs_created_at_idx on public.accessory_access_logs (created_at desc);
+create index if not exists accessory_access_logs_user_name_idx on public.accessory_access_logs (user_name);
+
+alter table public.accessory_access_logs enable row level security;
+
+drop policy if exists "service role manages accessory access logs" on public.accessory_access_logs;
+create policy "service role manages accessory access logs"
+on public.accessory_access_logs
 for all
 using (auth.role() = 'service_role')
 with check (auth.role() = 'service_role');
