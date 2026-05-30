@@ -1,5 +1,6 @@
 :root {
   --bg: #eef3ee;
+  --brand-mist: #92aca0;
   --surface: #ffffff;
   --surface-strong: #f7faf7;
   --surface-muted: #e5ede5;
@@ -78,16 +79,18 @@ h3 {
   display: grid;
   place-items: center;
   padding: 24px;
-  background: radial-gradient(circle at 50% 18%, rgba(182, 155, 100, 0.18), transparent 32%), linear-gradient(135deg, #f6f7f3, #dfe8e2);
+  background:
+    radial-gradient(circle at 50% 10%, rgba(255, 255, 255, 0.86), rgba(255, 255, 255, 0.42) 30%, transparent 56%),
+    linear-gradient(135deg, rgba(146, 172, 160, 0.32), rgba(255, 255, 255, 0.72) 46%, rgba(146, 172, 160, 0.22));
 }
 
 .entry-card {
-  width: min(100%, 640px);
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: var(--surface);
-  box-shadow: var(--shadow);
-  padding: 24px;
+  width: min(100%, 860px);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 8px 4px;
 }
 
 .password-screen {
@@ -111,7 +114,7 @@ h3 {
 }
 
 .entry-screen .logo-frame {
-  width: min(190px, 62%);
+  width: min(250px, 66%);
 }
 
 .logo-frame::before {
@@ -129,7 +132,7 @@ h3 {
   z-index: 1;
   display: block;
   width: 100%;
-  margin: 0 auto 14px;
+  margin: 0 auto 16px;
 }
 
 .login-form,
@@ -153,26 +156,27 @@ form,
 
 .profile-cards {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
 }
 
 .profile-card {
   position: relative;
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr);
+  grid-template-columns: 46px minmax(0, 1fr);
   align-items: center;
   justify-items: start;
-  gap: 6px 8px;
-  min-height: 64px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: linear-gradient(145deg, #ffffff, #f4f8f4);
+  gap: 12px;
+  min-height: 86px;
+  border: 1px solid rgba(52, 78, 66, 0.12);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.42);
   color: var(--text);
   cursor: pointer;
-  padding: 12px 14px;
+  padding: 18px;
   text-align: left;
-  box-shadow: 0 14px 30px rgba(28, 41, 35, 0.07);
+  box-shadow: 0 18px 42px rgba(52, 78, 66, 0.09);
+  backdrop-filter: blur(12px);
   white-space: normal;
   overflow: hidden;
 }
@@ -190,14 +194,15 @@ form,
 
 .profile-card:hover {
   border-color: rgba(52, 78, 66, 0.34);
-  box-shadow: 0 18px 38px rgba(28, 41, 35, 0.12);
+  background: rgba(255, 255, 255, 0.62);
+  box-shadow: 0 20px 48px rgba(52, 78, 66, 0.15);
   transform: translateY(-1px);
 }
 
 .profile-card.active {
   border-color: rgba(52, 78, 66, 0.58);
-  background: linear-gradient(145deg, #ffffff, #edf5ef);
-  box-shadow: 0 20px 42px rgba(52, 78, 66, 0.16);
+  background: rgba(146, 172, 160, 0.24);
+  box-shadow: 0 24px 52px rgba(52, 78, 66, 0.18);
 }
 
 .profile-card.active::after {
@@ -207,22 +212,22 @@ form,
 .profile-icon {
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: var(--accent-soft);
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  background: rgba(52, 78, 66, 0.12);
   color: var(--accent-dark);
 }
 
 .profile-icon svg {
-  width: 21px;
-  height: 21px;
+  width: 24px;
+  height: 24px;
   fill: currentColor;
 }
 
 .profile-title {
   color: var(--accent-dark);
-  font-size: 0.92rem;
+  font-size: 1.05rem;
   font-weight: 900;
 }
 
@@ -231,10 +236,6 @@ form,
   font-size: 0.75rem;
   font-weight: 700;
   line-height: 1.35;
-}
-
-.profile-icon {
-  grid-row: span 2;
 }
 
 .active-login-mode {
@@ -579,9 +580,9 @@ input,
 select,
 textarea {
   width: 100%;
-  border: 1px solid var(--line);
+  border: 1px solid rgba(52, 78, 66, 0.18);
   border-radius: 8px;
-  background: #fff;
+  background: rgba(255, 255, 255, 0.68);
   color: var(--text);
   padding: 10px 11px;
   min-height: 42px;
@@ -860,7 +861,7 @@ select:disabled {
 
 @media (min-width: 760px) {
   .entry-card {
-    width: min(100%, 760px);
+    width: min(100%, 880px);
   }
 
   .profile-cards {
@@ -868,8 +869,8 @@ select:disabled {
   }
 
   .profile-card {
-    grid-template-columns: 36px minmax(0, 1fr);
-    min-height: 78px;
+    grid-template-columns: 46px minmax(0, 1fr);
+    min-height: 86px;
   }
 }
 
