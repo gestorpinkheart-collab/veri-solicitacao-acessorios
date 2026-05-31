@@ -3,6 +3,7 @@ const SESSION_KEY = "factoryPartOrdersSession";
 const USERS_KEY = "factoryPartOrdersUsersV2";
 const API_ORDERS_URL = "/api/orders";
 const API_ACCESS_LOGS_URL = "/api/access-logs";
+const API_PRICES_URL = "/api/prices";
 const defaultUsers = [
   { login: "Charles Marinho", password: "12345", name: "Charles Marinho", role: "master", mustChangePassword: true },
   { login: "Juliano", password: "12345", name: "Juliano", role: "consultant", mustChangePassword: true },
@@ -81,6 +82,8 @@ const sampleOrders = [
 const today = new Date();
 const todayIso = toIsoDate(today);
 let orders = [];
+let accessLogs = [];
+let prices = [];
 let currentSession = loadSession();
 let apiAvailable = false;
 let users = loadUsers();
@@ -159,6 +162,17 @@ const elements = {
   reportOpenOrders: document.querySelector("#reportOpenOrders"),
   reportTotalPieces: document.querySelector("#reportTotalPieces"),
   dashboardBody: document.querySelector("#dashboardBody"),
+  refreshMasterData: document.querySelector("#refreshMasterData"),
+  masterAccessCount: document.querySelector("#masterAccessCount"),
+  masterOrderHistoryCount: document.querySelector("#masterOrderHistoryCount"),
+  accessLogsBody: document.querySelector("#accessLogsBody"),
+  orderHistoryBody: document.querySelector("#orderHistoryBody"),
+  priceForm: document.querySelector("#priceForm"),
+  priceModel: document.querySelector("#priceModel"),
+  priceSize: document.querySelector("#priceSize"),
+  priceBath: document.querySelector("#priceBath"),
+  priceValue: document.querySelector("#priceValue"),
+  pricesBody: document.querySelector("#pricesBody"),
 };
 
 init();
@@ -166,6 +180,7 @@ init();
 async function init() {
   populateOriginOptions();
   populateStatusOptions();
+  populatePriceOptions();
   try {
     orders = await loadOrders(false);
   } catch (error) {
@@ -200,6 +215,9 @@ async function init() {
   elements.reportSearchInput.addEventListener("input", renderReports);
   elements.reportFilterStatus.addEventListener("change", renderReports);
   elements.reportFilterPriority.addEventListener("change", renderReports);
+  elements.refreshMasterData?.addEventListener("click", loadMasterData);
+  elements.priceForm?.addEventListener("submit", handlePriceSubmit);
+  elements.priceModel?.addEventListener("change", () => populatePriceSizeOptions());
   elements.viewButtons.forEach((button) => {
     button.addEventListener("click", () => showView(button.dataset.view));
   });
@@ -363,6 +381,7 @@ function applySessionState() {
   document.body.classList.toggle("is-collaborator", currentSession.role === "collaborator");
   showView(isInternalUser() ? "managementView" : "requestView");
   resetForm();
+  if (isMasterUser()) loadMasterData();
   render();
 }
 
@@ -402,6 +421,22 @@ function populateStatusOptions() {
     elements.reportFilterStatus.append(new Option(status, status));
     elements.dashboardFilterStatus.append(new Option(status, status));
   }
+}
+
+function populatePriceOptions() {
+  if (!elements.priceModel) return;
+  elements.priceModel.innerHTML = '<option value="">Selecione</option>';
+  Object.keys(partSizes).forEach((model) => elements.priceModel.append(new Option(model, model)));
+  populateBathOptions(elements.priceBath);
+  populatePriceSizeOptions();
+}
+
+function populatePriceSizeOptions(selectedSize = "") {
+  if (!elements.priceSize) return;
+  const sizes = partSizes[elements.priceModel.value] || [];
+  elements.priceSize.innerHTML = '<option value="">Selecione</option>';
+  sizes.forEach((size) => elements.priceSize.append(new Option(size, size)));
+  elements.priceSize.value = selectedSize;
 }
 
 async function refreshOrders() {
@@ -603,6 +638,69 @@ async function logAccess(session) {
   }
 }
 
+async function loadMasterData() {
+  if (!isMasterUser()) return;
+  try {
+    const [logsResponse, pricesResponse] = await Promise.all([
+      fetch(API_ACCESS_LOGS_URL, { cache: "no-store" }),
+      fetch(API_PRICES_URL, { cache: "no-store" }),
+    ]);
+    if (logsResponse.ok) accessLogs = await logsResponse.json();
+    if (pricesResponse.ok) prices = await pricesResponse.json();
+  } catch (error) {
+    console.error(error);
+  }
+  renderMasterPanel();
+}
+
+async function savePrices() {
+  const response = await fetch(API_PRICES_URL, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(prices),
+  });
+  if (!response.ok) throw new Error(await apiErrorMessage(response));
+}
+
+async function handlePriceSubmit(event) {
+  event.preventDefault();
+  if (!isMasterUser()) return;
+
+  const price = {
+    model: elements.priceModel.value,
+    size: elements.priceSize.value,
+    bath: elements.priceBath.value,
+    unitCost: Number(elements.priceValue.value || 0),
+  };
+
+  prices = [
+    price,
+    ...prices.filter(
+      (item) => !(item.model === price.model && item.size === price.size && item.bath === price.bath)
+    ),
+  ];
+
+  try {
+    await savePrices();
+    elements.priceForm.reset();
+    populatePriceSizeOptions();
+    await loadMasterData();
+  } catch (error) {
+    alert(`Não foi possível salvar o preço.\n\n${error.message}`);
+  }
+}
+
+async function deletePrice(index) {
+  if (!isMasterUser()) return;
+  prices.splice(index, 1);
+  try {
+    await savePrices();
+    renderMasterPanel();
+  } catch (error) {
+    alert(`Não foi possível excluir o preço.\n\n${error.message}`);
+  }
+}
+
 async function handleSubmit(event) {
   event.preventDefault();
   if (!currentSession?.name) return;
@@ -789,6 +887,95 @@ function render() {
   renderOrders();
   renderDashboardTable();
   renderReports();
+  renderMasterPanel();
+}
+
+function renderMasterPanel() {
+  if (!isMasterUser() || !elements.accessLogsBody) return;
+  const historyRows = getOrderHistoryRows();
+  elements.masterAccessCount.textContent = accessLogs.length;
+  elements.masterOrderHistoryCount.textContent = historyRows.length;
+  renderAccessLogs();
+  renderOrderHistory(historyRows);
+  renderPrices();
+}
+
+function renderAccessLogs() {
+  elements.accessLogsBody.innerHTML = "";
+  if (!accessLogs.length) {
+    elements.accessLogsBody.innerHTML = '<tr><td colspan="4">Nenhum acesso registrado.</td></tr>';
+    return;
+  }
+
+  accessLogs.slice(0, 80).forEach((log) => {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td>${formatDateTime(log.createdAt)}</td>
+      <td>${log.userName || log.login || "Sem usuário"}</td>
+      <td>${roleLabel(log.role)}</td>
+      <td>${log.origin || ""}</td>
+    `;
+    elements.accessLogsBody.append(row);
+  });
+}
+
+function renderOrderHistory(historyRows) {
+  elements.orderHistoryBody.innerHTML = "";
+  if (!historyRows.length) {
+    elements.orderHistoryBody.innerHTML = '<tr><td colspan="5">Nenhuma movimentação registrada.</td></tr>';
+    return;
+  }
+
+  historyRows.slice(0, 120).forEach((item) => {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td>${formatDateTime(item.at)}</td>
+      <td>${item.orderId}</td>
+      <td>${item.action}</td>
+      <td>${item.user}</td>
+      <td>${roleLabel(item.role)}</td>
+    `;
+    elements.orderHistoryBody.append(row);
+  });
+}
+
+function renderPrices() {
+  elements.pricesBody.innerHTML = "";
+  if (!prices.length) {
+    elements.pricesBody.innerHTML = '<tr><td colspan="5">Nenhum preço cadastrado.</td></tr>';
+    return;
+  }
+
+  prices.forEach((price, index) => {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td>${price.model}</td>
+      <td>${price.size}</td>
+      <td>${price.bath}</td>
+      <td>${formatMoney(price.unitCost)}</td>
+      <td><button class="action-button danger-action" type="button" title="Excluir" aria-label="Excluir preço" data-price-delete="${index}">
+        <svg viewBox="0 0 24 24" focusable="false">
+          <path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm-3 6h12l-.8 11H6.8L6 9Zm4 2v7h2v-7h-2Zm4 0v7h2v-7h-2Z"/>
+        </svg>
+      </button></td>
+    `;
+    row.querySelector("[data-price-delete]").addEventListener("click", () => deletePrice(index));
+    elements.pricesBody.append(row);
+  });
+}
+
+function getOrderHistoryRows() {
+  return orders
+    .flatMap((order) =>
+      (Array.isArray(order.history) ? order.history : []).map((entry) => ({
+        orderId: order.id,
+        at: entry.at,
+        action: entry.action,
+        user: entry.user,
+        role: entry.role,
+      }))
+    )
+    .sort((a, b) => String(b.at || "").localeCompare(String(a.at || "")));
 }
 
 function getFilteredOrders() {
@@ -1245,6 +1432,29 @@ function toIsoDate(date) {
 function formatDate(value) {
   if (!value) return "";
   return new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`));
+}
+
+function formatDateTime(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "short",
+  }).format(date);
+}
+
+function formatMoney(value) {
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(value || 0));
+}
+
+function roleLabel(role) {
+  const labels = {
+    collaborator: "Colaborador",
+    consultant: "Gestão de Pedidos",
+    master: "Master",
+  };
+  return labels[role] || role || "";
 }
 
 function normalizeOrders(orderList) {

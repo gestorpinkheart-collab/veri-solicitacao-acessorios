@@ -14,6 +14,7 @@ from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parent
 DATA_FILE = ROOT / "orders.json"
+PRICES_FILE = ROOT / "prices.json"
 LOCK = Lock()
 
 
@@ -34,6 +35,7 @@ SUPABASE_URL = environ.get("SUPABASE_URL", "").rstrip("/")
 SUPABASE_SERVICE_ROLE_KEY = environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 SUPABASE_TABLE = environ.get("SUPABASE_ORDERS_TABLE", "accessory_orders")
 SUPABASE_ACCESS_LOGS_TABLE = environ.get("SUPABASE_ACCESS_LOGS_TABLE", "accessory_access_logs")
+SUPABASE_PRICES_TABLE = environ.get("SUPABASE_PRICES_TABLE", "accessory_prices")
 
 
 class StorageError(RuntimeError):
@@ -76,6 +78,20 @@ class RequestHandler(SimpleHTTPRequestHandler):
                 self.send_json({"ok": False, "error": str(exc)}, status=503)
             return
 
+        if parsed.path == "/api/access-logs":
+            try:
+                self.send_json(read_access_logs())
+            except StorageError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=503)
+            return
+
+        if parsed.path == "/api/prices":
+            try:
+                self.send_json(read_prices())
+            except StorageError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=503)
+            return
+
         super().do_GET()
 
     def do_PUT(self):
@@ -92,6 +108,24 @@ class RequestHandler(SimpleHTTPRequestHandler):
 
             try:
                 write_orders(orders)
+                self.send_json({"ok": True})
+            except StorageError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=503)
+            return
+
+        if self.path == "/api/prices":
+            try:
+                prices = self.read_json_body()
+            except ValueError:
+                self.send_error(400, "JSON invÃ¡lido")
+                return
+
+            if not isinstance(prices, list):
+                self.send_error(400, "A lista de preÃ§os Ã© obrigatÃ³ria")
+                return
+
+            try:
+                write_prices(prices)
                 self.send_json({"ok": True})
             except StorageError as exc:
                 self.send_json({"ok": False, "error": str(exc)}, status=503)
@@ -313,12 +347,57 @@ def delete_order(order_id):
         DATA_FILE.write_text(dumps(orders, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def read_access_logs():
+    if supabase_enabled():
+        try:
+            return read_access_logs_supabase()
+        except (HTTPError, URLError, ValueError) as exc:
+            raise storage_error("ler registros de acesso no Supabase", exc) from exc
+    return []
+
+
+def read_prices():
+    if supabase_enabled():
+        try:
+            return read_prices_supabase()
+        except (HTTPError, URLError, ValueError) as exc:
+            raise storage_error("ler preÃ§os no Supabase", exc) from exc
+
+    with LOCK:
+        return read_local_prices_unlocked()
+
+
+def write_prices(prices):
+    normalized = [normalize_price(price) for price in prices if isinstance(price, dict)]
+    if supabase_enabled():
+        try:
+            write_prices_supabase(normalized)
+            return
+        except (HTTPError, URLError, ValueError) as exc:
+            raise storage_error("salvar preÃ§os no Supabase", exc) from exc
+
+    with LOCK:
+        PRICES_FILE.write_text(dumps(normalized, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def read_local_orders_unlocked():
     if not DATA_FILE.exists():
         return []
 
     try:
         data = loads(DATA_FILE.read_text(encoding="utf-8"))
+    except ValueError:
+        return []
+
+    return data if isinstance(data, list) else []
+
+
+def read_local_prices_unlocked():
+    if not PRICES_FILE.exists():
+        return []
+
+    try:
+        data = loads(PRICES_FILE.read_text(encoding="utf-8"))
     except ValueError:
         return []
 
@@ -475,6 +554,36 @@ def delete_order_supabase(order_id):
     )
 
 
+def read_access_logs_supabase():
+    rows = supabase_request(
+        f"/rest/v1/{SUPABASE_ACCESS_LOGS_TABLE}?select=*&order=created_at.desc&limit=300"
+    )
+    return [db_to_access_log(row) for row in rows or []]
+
+
+def read_prices_supabase():
+    rows = supabase_request(
+        f"/rest/v1/{SUPABASE_PRICES_TABLE}?select=*&order=model.asc,size.asc,bath.asc"
+    )
+    return [db_to_price(row) for row in rows or []]
+
+
+def write_prices_supabase(prices):
+    supabase_request(
+        f"/rest/v1/{SUPABASE_PRICES_TABLE}?id=gte.0",
+        method="DELETE",
+        extra_headers={"Prefer": "return=minimal"},
+    )
+    if not prices:
+        return
+    supabase_request(
+        f"/rest/v1/{SUPABASE_PRICES_TABLE}",
+        method="POST",
+        body=[price_to_db(price) for price in prices],
+        extra_headers={"Prefer": "return=minimal"},
+    )
+
+
 def write_access_log(access):
     if not isinstance(access, dict):
         return
@@ -513,6 +622,25 @@ def normalize_order(order):
         "updatedBy": str(order.get("updatedBy", "") or "").strip(),
         "updatedByRole": str(order.get("updatedByRole", "") or "").strip(),
     }
+
+
+def normalize_price(price):
+    return {
+        "model": str(price.get("model", "")).strip(),
+        "size": str(price.get("size", "")).strip(),
+        "bath": str(price.get("bath", "")).strip(),
+        "unitCost": parse_money(price.get("unitCost", 0)),
+    }
+
+
+def parse_money(value):
+    if isinstance(value, (int, float)):
+        return round(float(value), 2)
+    text = str(value or "0").strip().replace(".", "").replace(",", ".")
+    try:
+        return round(float(text), 2)
+    except ValueError:
+        return 0
 
 
 def generate_order_id():
@@ -604,6 +732,36 @@ def db_to_order(row):
         "notes": row.get("notes", ""),
         "items": row.get("items") or [],
         "history": row.get("history") or [],
+    }
+
+
+def price_to_db(price):
+    return {
+        "model": price.get("model", ""),
+        "size": price.get("size", ""),
+        "bath": price.get("bath", ""),
+        "unit_cost": price.get("unitCost", 0),
+    }
+
+
+def db_to_price(row):
+    return {
+        "model": row.get("model", ""),
+        "size": row.get("size", ""),
+        "bath": row.get("bath", ""),
+        "unitCost": float(row.get("unit_cost") or 0),
+    }
+
+
+def db_to_access_log(row):
+    return {
+        "userName": row.get("user_name", ""),
+        "login": row.get("login", ""),
+        "role": row.get("role", ""),
+        "phone": row.get("phone", ""),
+        "origin": row.get("origin", ""),
+        "userAgent": row.get("user_agent", ""),
+        "createdAt": row.get("created_at", ""),
     }
 
 

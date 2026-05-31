@@ -699,6 +699,14 @@ select:disabled {
   display: inline-flex;
 }
 
+.master-only {
+  display: none;
+}
+
+.is-master .master-only {
+  display: inline-flex;
+}
+
 .item-row {
   display: grid;
   grid-template-columns: 1.35fr 0.9fr 1fr 80px 38px;
@@ -929,6 +937,33 @@ select:disabled {
   color: var(--accent-dark);
 }
 
+.master-grid {
+  align-items: start;
+}
+
+.price-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.price-form .primary-button {
+  align-self: end;
+}
+
+.compact-table {
+  max-height: 380px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.compact-table .report-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
 @media (max-width: 1050px) {
   .metrics-grid,
   .dashboard-grid,
@@ -961,6 +996,7 @@ select:disabled {
   .filters,
   .status-widgets,
   .profile-cards,
+  .price-form,
   .field-grid,
   .item-row,
   .metrics-grid,

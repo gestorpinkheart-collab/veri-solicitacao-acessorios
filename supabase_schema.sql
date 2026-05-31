@@ -67,3 +67,31 @@ on public.accessory_access_logs
 for all
 using (auth.role() = 'service_role')
 with check (auth.role() = 'service_role');
+
+create table if not exists public.accessory_prices (
+  id bigserial primary key,
+  model text not null,
+  size text not null,
+  bath text not null check (bath in ('Ouro', 'Ródio')),
+  unit_cost numeric(12,2) not null default 0,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (model, size, bath)
+);
+
+create index if not exists accessory_prices_model_idx on public.accessory_prices (model);
+
+drop trigger if exists accessory_prices_updated_at on public.accessory_prices;
+create trigger accessory_prices_updated_at
+before update on public.accessory_prices
+for each row
+execute function public.set_accessory_orders_updated_at();
+
+alter table public.accessory_prices enable row level security;
+
+drop policy if exists "service role manages accessory prices" on public.accessory_prices;
+create policy "service role manages accessory prices"
+on public.accessory_prices
+for all
+using (auth.role() = 'service_role')
+with check (auth.role() = 'service_role');
