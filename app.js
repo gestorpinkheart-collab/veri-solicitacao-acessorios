@@ -315,16 +315,28 @@ async function handleLogin(event) {
   }
 
   const name = elements.loginName.value.trim();
-  const phone = normalizePhone(elements.loginPhone.value);
+  const phone = normalizeLoginPhone(elements.loginPhone.value);
 
   if (!name) {
     showLoginError("Informe o nome do solicitante.");
     return;
   }
 
-  if (phone.length < 10) {
-    showLoginError("Informe um celular válido para receber avisos.");
+  if (!isValidBrazilMobile(phone)) {
+    showLoginError("Informe um celular válido com DDD e 9 dígitos. Exemplo: (11) 99999-9999. Esse número será usado para avisos do WhatsApp.");
     return;
+  }
+
+  const knownNames = await findKnownNamesForPhone(phone);
+  const differentNames = knownNames.filter((knownName) => normalizeText(knownName) !== normalizeText(name));
+  if (differentNames.length) {
+    const previousNames = differentNames.slice(0, 3).join(", ");
+    alert(`Atenção: este celular já possui histórico no sistema vinculado a: ${previousNames}.\n\nPara manter a consulta dos pedidos e os avisos por WhatsApp corretos, use sempre este mesmo número quando for você realizando a solicitação.`);
+    await logAccess(
+      { name, phone, role: "collaborator", login: name },
+      "alerta_nome_celular",
+      { previousNames: differentNames, message: "Celular já utilizado com outro nome de colaborador." }
+    );
   }
 
   saveSession({ name, phone, role: "collaborator" });
@@ -375,6 +387,26 @@ async function authenticateInternalUser(login, password, role) {
     if (!user || user.password !== password || user.role !== role) return null;
     return user;
   }
+}
+
+async function findKnownNamesForPhone(phone) {
+  const normalizedPhone = normalizePhone(phone);
+  let phoneOrders = orders.filter((order) => normalizePhone(order.phone) === normalizedPhone);
+
+  if (location.protocol.startsWith("http")) {
+    try {
+      const response = await fetch(`/api/status?phone=${encodeURIComponent(normalizedPhone)}`, { cache: "no-store" });
+      if (response.ok) {
+        const data = await response.json();
+        if (Array.isArray(data)) phoneOrders = data;
+      }
+    } catch {
+      // Use the locally loaded orders if the status endpoint is temporarily unavailable.
+    }
+  }
+
+  const names = phoneOrders.map((order) => order.requester).filter(Boolean);
+  return [...new Set(names)];
 }
 
 function showLoginError(message) {
@@ -707,7 +739,7 @@ async function removeOrder(id) {
   }
 }
 
-async function logAccess(session) {
+async function logAccess(session, eventType = "login", details = {}) {
   if (!location.protocol.startsWith("http")) return;
   try {
     await fetch(API_ACCESS_LOGS_URL, {
@@ -720,6 +752,8 @@ async function logAccess(session) {
         phone: session.phone || "",
         origin: location.href,
         userAgent: navigator.userAgent,
+        eventType,
+        details,
       }),
     });
   } catch {
@@ -1008,6 +1042,7 @@ function calculatePricePreview(price) {
 function addItemRow(item = {}) {
   const fragment = elements.itemTemplate.content.cloneNode(true);
   const row = fragment.querySelector(".item-row");
+  row.dataset.createdAt = String(Date.now());
   const modelSelect = row.querySelector(".item-model");
   populateModelOptions(modelSelect, item.model);
   populateSizeOptions(row, modelSelect.value, item.size);
@@ -1015,9 +1050,22 @@ function addItemRow(item = {}) {
   populateBathOptions(row.querySelector(".item-bath"), item.bath);
   row.querySelector(".item-quantity").value = item.quantity || "";
   row.querySelector(".remove-item").addEventListener("click", () => {
-    if (elements.itemsList.children.length > 1) row.remove();
+    if (elements.itemsList.children.length > 1) {
+      row.remove();
+      refreshItemRowLabels();
+    }
   });
   elements.itemsList.prepend(row);
+  refreshItemRowLabels(row);
+}
+
+function refreshItemRowLabels(newRow = null) {
+  const rows = [...elements.itemsList.querySelectorAll(".item-row")];
+  rows.forEach((row, index) => {
+    row.classList.toggle("new-item-row", row === newRow);
+    const badge = row.querySelector(".item-index");
+    if (badge) badge.textContent = `Item ${index + 1}`;
+  });
 }
 
 function populateBathOptions(select, selectedBath = "") {
@@ -1231,7 +1279,7 @@ function orderBathCost(order) {
 function renderAccessLogs() {
   elements.accessLogsBody.innerHTML = "";
   if (!accessLogs.length) {
-    elements.accessLogsBody.innerHTML = '<tr><td colspan="4">Nenhum acesso registrado.</td></tr>';
+    elements.accessLogsBody.innerHTML = '<tr><td colspan="5">Nenhum acesso registrado.</td></tr>';
     return;
   }
 
@@ -1241,10 +1289,19 @@ function renderAccessLogs() {
       <td>${formatDateTime(log.createdAt)}</td>
       <td>${log.userName || log.login || "Sem usuário"}</td>
       <td>${roleLabel(log.role)}</td>
+      <td>${accessEventLabel(log.eventType)}</td>
       <td>${log.origin || ""}</td>
     `;
     elements.accessLogsBody.append(row);
   });
+}
+
+function accessEventLabel(eventType) {
+  const labels = {
+    login: "Login",
+    alerta_nome_celular: "Nome diferente no celular",
+  };
+  return labels[eventType] || eventType || "Login";
 }
 
 function renderOrderHistory(historyRows) {
@@ -1924,6 +1981,20 @@ function normalizeText(value) {
 
 function normalizePhone(value) {
   return String(value || "").replace(/\D/g, "");
+}
+
+function normalizeLoginPhone(value) {
+  const digits = normalizePhone(value);
+  if (digits.length === 13 && digits.startsWith("55")) return digits.slice(2);
+  return digits;
+}
+
+function isValidBrazilMobile(value) {
+  const phone = normalizeLoginPhone(value);
+  if (phone.length !== 11) return false;
+  if (/^(\d)\1+$/.test(phone)) return false;
+  const ddd = Number(phone.slice(0, 2));
+  return ddd >= 11 && ddd <= 99 && phone[2] === "9";
 }
 
 function normalizeBath(value) {

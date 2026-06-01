@@ -843,6 +843,8 @@ def write_access_log(access):
         "phone": only_digits(access.get("phone", "")),
         "origin": str(access.get("origin", "") or "").strip(),
         "user_agent": str(access.get("userAgent", "") or "").strip(),
+        "event_type": str(access.get("eventType", "login") or "login").strip(),
+        "details": access.get("details") if isinstance(access.get("details"), dict) else {},
     }
     if supabase_enabled():
         try:
@@ -1088,6 +1090,8 @@ def db_to_access_log(row):
         "phone": row.get("phone", ""),
         "origin": row.get("origin", ""),
         "userAgent": row.get("user_agent", ""),
+        "eventType": row.get("event_type", "login"),
+        "details": row.get("details") or {},
         "createdAt": row.get("created_at", ""),
     }
 

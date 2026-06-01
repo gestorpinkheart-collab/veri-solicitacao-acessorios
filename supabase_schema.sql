@@ -53,8 +53,13 @@ create table if not exists public.accessory_access_logs (
   phone text,
   origin text,
   user_agent text,
+  event_type text not null default 'login',
+  details jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now()
 );
+
+alter table public.accessory_access_logs add column if not exists event_type text not null default 'login';
+alter table public.accessory_access_logs add column if not exists details jsonb not null default '{}'::jsonb;
 
 create index if not exists accessory_access_logs_created_at_idx on public.accessory_access_logs (created_at desc);
 create index if not exists accessory_access_logs_user_name_idx on public.accessory_access_logs (user_name);
@@ -72,7 +77,7 @@ create table if not exists public.accessory_prices (
   id bigserial primary key,
   model text not null,
   size text not null,
-  bath text not null check (bath in ('Ouro', 'Ródio')),
+  bath text not null check (bath in ('Bruto', 'Ouro', 'Ródio')),
   unit_cost numeric(14,6) not null default 0,
   weight numeric(12,4) not null default 0,
   gold_thousandth numeric(12,6) not null default 0,
@@ -84,6 +89,8 @@ create table if not exists public.accessory_prices (
 alter table public.accessory_prices add column if not exists weight numeric(12,4) not null default 0;
 alter table public.accessory_prices add column if not exists gold_thousandth numeric(12,6) not null default 0;
 alter table public.accessory_prices alter column unit_cost type numeric(14,6);
+alter table public.accessory_prices drop constraint if exists accessory_prices_bath_check;
+alter table public.accessory_prices add constraint accessory_prices_bath_check check (bath in ('Bruto', 'Ouro', 'Ródio'));
 
 create index if not exists accessory_prices_model_idx on public.accessory_prices (model);
 
