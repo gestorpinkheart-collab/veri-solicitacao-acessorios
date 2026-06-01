@@ -4,6 +4,7 @@ const USERS_KEY = "factoryPartOrdersUsersV2";
 const API_ORDERS_URL = "/api/orders";
 const API_ACCESS_LOGS_URL = "/api/access-logs";
 const API_PRICES_URL = "/api/prices";
+const API_COST_SETTINGS_URL = "/api/cost-settings";
 const defaultUsers = [
   { login: "Charles Marinho", password: "12345", name: "Charles Marinho", role: "master", mustChangePassword: true },
   { login: "Juliano", password: "12345", name: "Juliano", role: "consultant", mustChangePassword: true },
@@ -84,6 +85,7 @@ const todayIso = toIsoDate(today);
 let orders = [];
 let accessLogs = [];
 let prices = [];
+let costSettings = { goldValue: 800, rhodiumValue: 2500, rhodiumFactor: 0.7 };
 let currentSession = loadSession();
 let apiAvailable = false;
 let users = loadUsers();
@@ -167,11 +169,17 @@ const elements = {
   masterOrderHistoryCount: document.querySelector("#masterOrderHistoryCount"),
   accessLogsBody: document.querySelector("#accessLogsBody"),
   orderHistoryBody: document.querySelector("#orderHistoryBody"),
+  costSettingsForm: document.querySelector("#costSettingsForm"),
+  costGoldValue: document.querySelector("#costGoldValue"),
+  costRhodiumValue: document.querySelector("#costRhodiumValue"),
+  costRhodiumFactor: document.querySelector("#costRhodiumFactor"),
   priceForm: document.querySelector("#priceForm"),
   priceModel: document.querySelector("#priceModel"),
   priceSize: document.querySelector("#priceSize"),
   priceBath: document.querySelector("#priceBath"),
   priceValue: document.querySelector("#priceValue"),
+  priceWeight: document.querySelector("#priceWeight"),
+  priceGoldThousandth: document.querySelector("#priceGoldThousandth"),
   pricesBody: document.querySelector("#pricesBody"),
 };
 
@@ -216,6 +224,7 @@ async function init() {
   elements.reportFilterStatus.addEventListener("change", renderReports);
   elements.reportFilterPriority.addEventListener("change", renderReports);
   elements.refreshMasterData?.addEventListener("click", loadMasterData);
+  elements.costSettingsForm?.addEventListener("submit", handleCostSettingsSubmit);
   elements.priceForm?.addEventListener("submit", handlePriceSubmit);
   elements.priceModel?.addEventListener("change", () => populatePriceSizeOptions());
   elements.viewButtons.forEach((button) => {
@@ -279,10 +288,10 @@ function saveSession(session) {
   logAccess(session);
 }
 
-function handleLogin(event) {
+async function handleLogin(event) {
   event.preventDefault();
   if (activeLoginMode === "consultant" || activeLoginMode === "master") {
-    handleInternalLogin();
+    await handleInternalLogin();
     return;
   }
 
@@ -302,24 +311,51 @@ function handleLogin(event) {
   saveSession({ name, phone, role: "collaborator" });
 }
 
-function handleInternalLogin() {
+async function handleInternalLogin() {
   const login = elements.internalLogin.value.trim();
   const password = elements.masterPassword.value;
-  const user = users.find((item) => normalizeText(item.login) === normalizeText(login));
+  let user = null;
+  try {
+    user = await authenticateInternalUser(login, password, activeLoginMode);
+  } catch (error) {
+    showLoginError(error.message);
+    return;
+  }
 
-  if (!user || user.password !== password || user.role !== activeLoginMode) {
+  if (!user) {
     showLoginError("Login ou senha inválidos.");
     return;
   }
 
   if (user.mustChangePassword) {
-    pendingUser = user;
+    pendingUser = { ...user, currentPassword: password };
     elements.entryScreen.hidden = true;
     elements.passwordScreen.hidden = false;
     return;
   }
 
   saveSession({ name: user.name, role: user.role, login: user.login });
+}
+
+async function authenticateInternalUser(login, password, role) {
+  try {
+    const response = await fetch("/api/auth", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ login, password, role }),
+    });
+    if (response.ok) {
+      const payload = await response.json();
+      return payload.user;
+    }
+    const payload = await response.json().catch(() => ({}));
+    if (response.status >= 500 && payload.error) throw new Error(payload.error);
+    return null;
+  } catch {
+    const user = users.find((item) => normalizeText(item.login) === normalizeText(login));
+    if (!user || user.password !== password || user.role !== role) return null;
+    return user;
+  }
 }
 
 function showLoginError(message) {
@@ -340,7 +376,7 @@ function setLoginMode(mode) {
   elements.loginPhone.value = "";
 }
 
-function handlePasswordChange(event) {
+async function handlePasswordChange(event) {
   event.preventDefault();
   const password = elements.newPassword.value;
   const confirmation = elements.confirmPassword.value;
@@ -357,14 +393,35 @@ function handlePasswordChange(event) {
     return;
   }
 
-  users = users.map((user) =>
-    user.login === pendingUser.login ? { ...user, password, mustChangePassword: false } : user
-  );
-  saveUsers();
-  const user = users.find((item) => item.login === pendingUser.login);
-  pendingUser = null;
-  elements.passwordForm.reset();
-  saveSession({ name: user.name, role: user.role, login: user.login });
+  try {
+    const response = await fetch("/api/users/password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        login: pendingUser.login,
+        currentPassword: pendingUser.currentPassword,
+        newPassword: password,
+      }),
+    });
+    const payload = await response.json();
+    if (!response.ok) {
+      elements.passwordError.textContent = payload.error || "Não foi possível trocar a senha.";
+      return;
+    }
+    pendingUser = null;
+    elements.passwordForm.reset();
+    saveSession({ name: payload.user.name, role: payload.user.role, login: payload.user.login });
+  } catch (error) {
+    users = users.map((user) =>
+      user.login === pendingUser.login ? { ...user, password, mustChangePassword: false } : user
+    );
+    saveUsers();
+    const user = users.find((item) => item.login === pendingUser.login);
+    pendingUser = null;
+    elements.passwordForm.reset();
+    if (user) saveSession({ name: user.name, role: user.role, login: user.login });
+    else elements.passwordError.textContent = error.message;
+  }
 }
 
 function applySessionState() {
@@ -641,16 +698,32 @@ async function logAccess(session) {
 async function loadMasterData() {
   if (!isMasterUser()) return;
   try {
-    const [logsResponse, pricesResponse] = await Promise.all([
+    const [logsResponse, pricesResponse, settingsResponse] = await Promise.all([
       fetch(API_ACCESS_LOGS_URL, { cache: "no-store" }),
       fetch(API_PRICES_URL, { cache: "no-store" }),
+      fetch(API_COST_SETTINGS_URL, { cache: "no-store" }),
     ]);
     if (logsResponse.ok) accessLogs = await logsResponse.json();
     if (pricesResponse.ok) prices = await pricesResponse.json();
+    if (settingsResponse.ok) costSettings = normalizeCostSettings(await settingsResponse.json());
   } catch (error) {
     console.error(error);
   }
   renderMasterPanel();
+}
+
+async function loadCostData() {
+  if (!location.protocol.startsWith("http")) return;
+  try {
+    const [pricesResponse, settingsResponse] = await Promise.all([
+      fetch(API_PRICES_URL, { cache: "no-store" }),
+      fetch(API_COST_SETTINGS_URL, { cache: "no-store" }),
+    ]);
+    if (pricesResponse.ok) prices = await pricesResponse.json();
+    if (settingsResponse.ok) costSettings = normalizeCostSettings(await settingsResponse.json());
+  } catch (error) {
+    console.error(error);
+  }
 }
 
 async function savePrices() {
@@ -662,6 +735,33 @@ async function savePrices() {
   if (!response.ok) throw new Error(await apiErrorMessage(response));
 }
 
+async function saveCostSettings() {
+  const response = await fetch(API_COST_SETTINGS_URL, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(costSettings),
+  });
+  if (!response.ok) throw new Error(await apiErrorMessage(response));
+}
+
+async function handleCostSettingsSubmit(event) {
+  event.preventDefault();
+  if (!isMasterUser()) return;
+
+  costSettings = normalizeCostSettings({
+    goldValue: elements.costGoldValue.value,
+    rhodiumValue: elements.costRhodiumValue.value,
+    rhodiumFactor: elements.costRhodiumFactor.value,
+  });
+
+  try {
+    await saveCostSettings();
+    await loadMasterData();
+  } catch (error) {
+    alert(`Não foi possível salvar os parâmetros.\n\n${error.message}`);
+  }
+}
+
 async function handlePriceSubmit(event) {
   event.preventDefault();
   if (!isMasterUser()) return;
@@ -671,6 +771,8 @@ async function handlePriceSubmit(event) {
     size: elements.priceSize.value,
     bath: elements.priceBath.value,
     unitCost: Number(elements.priceValue.value || 0),
+    weight: Number(elements.priceWeight.value || 0),
+    goldThousandth: Number(elements.priceGoldThousandth.value || 0),
   };
 
   prices = [
@@ -718,9 +820,12 @@ async function handleSubmit(event) {
     return;
   }
 
+  await loadCostData();
+
   const existingId = elements.editingId.value;
   const requester = isInternalUser() ? elements.requester.value.trim() : currentSession.name;
   const existingOrder = existingId ? orders.find((item) => item.id === existingId) : null;
+  const pricedItems = enrichItemsForOrder(items, existingOrder);
   const order = {
     requestDate: existingOrder?.requestDate || todayIso,
     requester,
@@ -730,7 +835,7 @@ async function handleSubmit(event) {
     dueDate: "",
     status: isInternalUser() ? elements.status.value : statuses[0],
     notes: elements.notes.value.trim(),
-    items,
+    items: pricedItems,
     updatedBy: currentSession.name,
     updatedByRole: currentSession.role,
   };
@@ -762,6 +867,97 @@ function getItemsFromForm() {
       quantity: Number(row.querySelector(".item-quantity").value),
     }))
     .filter((item) => item.model && item.quantity > 0);
+}
+
+function enrichItemsForOrder(items, existingOrder) {
+  const remainingExistingItems = [...(existingOrder?.items || [])];
+  return items.map((item) => {
+    const existingIndex = remainingExistingItems.findIndex((current) => sameItemIdentity(current, item));
+    if (existingIndex >= 0) {
+      const existingItem = remainingExistingItems.splice(existingIndex, 1)[0];
+      return recalculateExistingItemCost(item, existingItem);
+    }
+    return enrichItemCost(item);
+  });
+}
+
+function sameItemIdentity(a, b) {
+  return a.model === b.model && a.size === b.size && normalizeBath(a.bath) === normalizeBath(b.bath);
+}
+
+function recalculateExistingItemCost(item, existingItem) {
+  if (!existingItem.totalUnitCost && !existingItem.unitCost && !existingItem.bathCost) {
+    return enrichItemCost(item);
+  }
+  const quantity = Number(item.quantity || 0);
+  const totalUnitCost = Number(existingItem.totalUnitCost || 0);
+  return {
+    ...item,
+    quantity,
+    unitCost: Number(existingItem.unitCost || 0),
+    weight: Number(existingItem.weight || 0),
+    goldThousandth: Number(existingItem.goldThousandth || 0),
+    bathCost: Number(existingItem.bathCost || 0),
+    totalUnitCost,
+    lineCost: roundMoney(totalUnitCost * quantity),
+    costSnapshot: existingItem.costSnapshot || {},
+  };
+}
+
+function enrichItemCost(item) {
+  const price = findPrice(item);
+  const unitCost = Number(price?.unitCost || 0);
+  const weight = Number(price?.weight || 0);
+  const goldThousandth = Number(price?.goldThousandth || 0);
+  const bathCost = calculateBathCost({ bath: item.bath, weight, goldThousandth });
+  const totalUnitCost = unitCost + bathCost;
+  const quantity = Number(item.quantity || 0);
+
+  return {
+    ...item,
+    quantity,
+    unitCost: roundMoney(unitCost),
+    weight,
+    goldThousandth,
+    bathCost: roundMoney(bathCost),
+    totalUnitCost: roundMoney(totalUnitCost),
+    lineCost: roundMoney(totalUnitCost * quantity),
+    costSnapshot: {
+      goldValue: Number(costSettings.goldValue || 0),
+      rhodiumValue: Number(costSettings.rhodiumValue || 0),
+      rhodiumFactor: Number(costSettings.rhodiumFactor || 0),
+    },
+  };
+}
+
+function findPrice(item) {
+  return prices.find(
+    (price) => price.model === item.model && price.size === item.size && normalizeBath(price.bath) === normalizeBath(item.bath)
+  );
+}
+
+function calculateBathCost({ bath, weight, goldThousandth }) {
+  const normalizedBath = normalizeBath(bath);
+  const pieceWeight = Number(weight || 0);
+  if (normalizedBath === "Ródio") {
+    return (Number(costSettings.rhodiumFactor || 0) * Number(costSettings.rhodiumValue || 0) / 1000) * pieceWeight;
+  }
+  if (normalizedBath === "Ouro") {
+    return pieceWeight * Number(goldThousandth || 0) * Number(costSettings.goldValue || 0);
+  }
+  return 0;
+}
+
+function calculatePricePreview(price) {
+  const bathCost = calculateBathCost({
+    bath: price.bath,
+    weight: price.weight,
+    goldThousandth: price.goldThousandth,
+  });
+  return {
+    bathCost: roundMoney(bathCost),
+    totalUnitCost: roundMoney(Number(price.unitCost || 0) + bathCost),
+  };
 }
 
 function addItemRow(item = {}) {
@@ -895,9 +1091,17 @@ function renderMasterPanel() {
   const historyRows = getOrderHistoryRows();
   elements.masterAccessCount.textContent = accessLogs.length;
   elements.masterOrderHistoryCount.textContent = historyRows.length;
+  renderCostSettings();
   renderAccessLogs();
   renderOrderHistory(historyRows);
   renderPrices();
+}
+
+function renderCostSettings() {
+  if (!elements.costGoldValue) return;
+  elements.costGoldValue.value = Number(costSettings.goldValue || 800);
+  elements.costRhodiumValue.value = Number(costSettings.rhodiumValue || 2500);
+  elements.costRhodiumFactor.value = Number(costSettings.rhodiumFactor || 0.7);
 }
 
 function renderAccessLogs() {
@@ -942,17 +1146,22 @@ function renderOrderHistory(historyRows) {
 function renderPrices() {
   elements.pricesBody.innerHTML = "";
   if (!prices.length) {
-    elements.pricesBody.innerHTML = '<tr><td colspan="5">Nenhum preço cadastrado.</td></tr>';
+    elements.pricesBody.innerHTML = '<tr><td colspan="9">Nenhum preço cadastrado.</td></tr>';
     return;
   }
 
   prices.forEach((price, index) => {
+    const preview = calculatePricePreview(price);
     const row = document.createElement("tr");
     row.innerHTML = `
       <td>${price.model}</td>
       <td>${price.size}</td>
       <td>${price.bath}</td>
       <td>${formatMoney(price.unitCost)}</td>
+      <td>${Number(price.weight || 0).toLocaleString("pt-BR", { maximumFractionDigits: 3 })}</td>
+      <td>${Number(price.goldThousandth || 0).toLocaleString("pt-BR", { maximumFractionDigits: 4 })}</td>
+      <td>${formatMoney(preview.bathCost)}</td>
+      <td>${formatMoney(preview.totalUnitCost)}</td>
       <td><button class="action-button danger-action" type="button" title="Excluir" aria-label="Excluir preço" data-price-delete="${index}">
         <svg viewBox="0 0 24 24" focusable="false">
           <path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm-3 6h12l-.8 11H6.8L6 9Zm4 2v7h2v-7h-2Zm4 0v7h2v-7h-2Z"/>
@@ -1446,6 +1655,18 @@ function formatDateTime(value) {
 
 function formatMoney(value) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(value || 0));
+}
+
+function roundMoney(value) {
+  return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+}
+
+function normalizeCostSettings(settings = {}) {
+  return {
+    goldValue: Number(settings.goldValue || settings.gold_value || 800),
+    rhodiumValue: Number(settings.rhodiumValue || settings.rhodium_value || 2500),
+    rhodiumFactor: Number(settings.rhodiumFactor || settings.rhodium_factor || 0.7),
+  };
 }
 
 function roleLabel(role) {

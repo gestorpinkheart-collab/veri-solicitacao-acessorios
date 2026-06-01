@@ -9,12 +9,15 @@ from html import escape
 from os import environ
 from datetime import datetime
 from secrets import token_hex
+from hashlib import sha256
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parent
 DATA_FILE = ROOT / "orders.json"
 PRICES_FILE = ROOT / "prices.json"
+COST_SETTINGS_FILE = ROOT / "cost_settings.json"
+USERS_FILE = ROOT / "users.json"
 LOCK = Lock()
 
 
@@ -36,6 +39,13 @@ SUPABASE_SERVICE_ROLE_KEY = environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 SUPABASE_TABLE = environ.get("SUPABASE_ORDERS_TABLE", "accessory_orders")
 SUPABASE_ACCESS_LOGS_TABLE = environ.get("SUPABASE_ACCESS_LOGS_TABLE", "accessory_access_logs")
 SUPABASE_PRICES_TABLE = environ.get("SUPABASE_PRICES_TABLE", "accessory_prices")
+SUPABASE_COST_SETTINGS_TABLE = environ.get("SUPABASE_COST_SETTINGS_TABLE", "accessory_cost_settings")
+SUPABASE_USERS_TABLE = environ.get("SUPABASE_USERS_TABLE", "accessory_users")
+
+DEFAULT_USERS = [
+    {"login": "Charles Marinho", "password": "12345", "name": "Charles Marinho", "role": "master", "mustChangePassword": True},
+    {"login": "Juliano", "password": "12345", "name": "Juliano", "role": "consultant", "mustChangePassword": True},
+]
 
 
 class StorageError(RuntimeError):
@@ -92,6 +102,13 @@ class RequestHandler(SimpleHTTPRequestHandler):
                 self.send_json({"ok": False, "error": str(exc)}, status=503)
             return
 
+        if parsed.path == "/api/cost-settings":
+            try:
+                self.send_json(read_cost_settings())
+            except StorageError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=503)
+            return
+
         super().do_GET()
 
     def do_PUT(self):
@@ -131,9 +148,61 @@ class RequestHandler(SimpleHTTPRequestHandler):
                 self.send_json({"ok": False, "error": str(exc)}, status=503)
             return
 
+        if self.path == "/api/cost-settings":
+            try:
+                settings = self.read_json_body()
+            except ValueError:
+                self.send_error(400, "JSON invÃƒÂ¡lido")
+                return
+
+            if not isinstance(settings, dict):
+                self.send_error(400, "Os parÃƒÂ¢metros de custo sÃƒÂ£o obrigatÃƒÂ³rios")
+                return
+
+            try:
+                write_cost_settings(settings)
+                self.send_json({"ok": True})
+            except StorageError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=503)
+            return
+
         self.send_error(404)
 
     def do_POST(self):
+        if self.path == "/api/auth":
+            try:
+                credentials = self.read_json_body()
+            except ValueError:
+                self.send_error(400, "JSON invÃ¡lido")
+                return
+
+            try:
+                user = authenticate_user(credentials)
+            except StorageError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=503)
+                return
+            if not user:
+                self.send_json({"ok": False, "error": "Login ou senha invÃ¡lidos."}, status=401)
+                return
+            self.send_json({"ok": True, "user": user})
+            return
+
+        if self.path == "/api/users/password":
+            try:
+                payload = self.read_json_body()
+            except ValueError:
+                self.send_error(400, "JSON invÃ¡lido")
+                return
+
+            try:
+                user = change_user_password(payload)
+                self.send_json({"ok": True, "user": user})
+            except ValueError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=400)
+            except StorageError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=503)
+            return
+
         if self.path == "/api/access-logs":
             try:
                 access = self.read_json_body()
@@ -380,6 +449,130 @@ def write_prices(prices):
         PRICES_FILE.write_text(dumps(normalized, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def read_cost_settings():
+    if supabase_enabled():
+        try:
+            return read_cost_settings_supabase()
+        except (HTTPError, URLError, ValueError) as exc:
+            raise storage_error("ler parâmetros de custo no Supabase", exc) from exc
+
+    with LOCK:
+        return read_local_cost_settings_unlocked()
+
+
+def write_cost_settings(settings):
+    normalized = normalize_cost_settings(settings)
+    if supabase_enabled():
+        try:
+            write_cost_settings_supabase(normalized)
+            return
+        except (HTTPError, URLError, ValueError) as exc:
+            raise storage_error("salvar parâmetros de custo no Supabase", exc) from exc
+
+    with LOCK:
+        COST_SETTINGS_FILE.write_text(dumps(normalized, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def authenticate_user(credentials):
+    if not isinstance(credentials, dict):
+        return None
+    login = str(credentials.get("login", "")).strip()
+    password = str(credentials.get("password", ""))
+    role = str(credentials.get("role", "")).strip()
+    user = find_user(login)
+    if not user or user.get("role") != role:
+        return None
+    if not verify_password(password, user):
+        return None
+    return public_user(user)
+
+
+def change_user_password(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("Dados invÃ¡lidos.")
+    login = str(payload.get("login", "")).strip()
+    current_password = str(payload.get("currentPassword", ""))
+    new_password = str(payload.get("newPassword", ""))
+    if len(new_password) < 4:
+        raise ValueError("A senha deve ter pelo menos 4 caracteres.")
+    if new_password == "12345":
+        raise ValueError("Escolha uma senha diferente da provisÃ³ria.")
+    user = find_user(login)
+    if not user or not verify_password(current_password, user):
+        raise ValueError("Senha atual invÃ¡lida.")
+    salt = token_hex(8)
+    updated = {
+        **user,
+        "passwordHash": hash_password(new_password, salt),
+        "passwordSalt": salt,
+        "mustChangePassword": False,
+    }
+    save_user(updated)
+    return public_user(updated)
+
+
+def find_user(login):
+    ensure_default_users()
+    normalized_login = normalize(login)
+    return next((user for user in read_users() if normalize(user.get("login")) == normalized_login), None)
+
+
+def read_users():
+    if supabase_enabled():
+        try:
+            return read_users_supabase()
+        except (HTTPError, URLError, ValueError) as exc:
+            raise storage_error("ler usuÃ¡rios no Supabase", exc) from exc
+    with LOCK:
+        return read_local_users_unlocked()
+
+
+def save_user(user):
+    if supabase_enabled():
+        try:
+            save_user_supabase(user)
+            return
+        except (HTTPError, URLError, ValueError) as exc:
+            raise storage_error("salvar usuÃ¡rio no Supabase", exc) from exc
+    with LOCK:
+        users = read_local_users_unlocked()
+        users = [current for current in users if normalize(current.get("login")) != normalize(user.get("login"))]
+        users.append(user)
+        USERS_FILE.write_text(dumps(users, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def ensure_default_users():
+    if getattr(ensure_default_users, "done", False):
+        return
+    try:
+        users = read_users_without_seed()
+        existing = {normalize(user.get("login")) for user in users}
+        for default in DEFAULT_USERS:
+            if normalize(default["login"]) not in existing:
+                save_user_without_seed(default_user_record(default))
+    except (HTTPError, URLError, ValueError) as exc:
+        raise storage_error("preparar usuÃ¡rios no Supabase", exc) from exc
+    ensure_default_users.done = True
+
+
+def read_users_without_seed():
+    if supabase_enabled():
+        return read_users_supabase()
+    with LOCK:
+        return read_local_users_unlocked()
+
+
+def save_user_without_seed(user):
+    if supabase_enabled():
+        save_user_supabase(user)
+        return
+    with LOCK:
+        users = read_local_users_unlocked()
+        users = [current for current in users if normalize(current.get("login")) != normalize(user.get("login"))]
+        users.append(user)
+        USERS_FILE.write_text(dumps(users, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def read_local_orders_unlocked():
     if not DATA_FILE.exists():
         return []
@@ -401,6 +594,28 @@ def read_local_prices_unlocked():
     except ValueError:
         return []
 
+    return data if isinstance(data, list) else []
+
+
+def read_local_cost_settings_unlocked():
+    if not COST_SETTINGS_FILE.exists():
+        return default_cost_settings()
+
+    try:
+        data = loads(COST_SETTINGS_FILE.read_text(encoding="utf-8"))
+    except ValueError:
+        return default_cost_settings()
+
+    return normalize_cost_settings(data if isinstance(data, dict) else {})
+
+
+def read_local_users_unlocked():
+    if not USERS_FILE.exists():
+        return []
+    try:
+        data = loads(USERS_FILE.read_text(encoding="utf-8"))
+    except ValueError:
+        return []
     return data if isinstance(data, list) else []
 
 
@@ -584,6 +799,40 @@ def write_prices_supabase(prices):
     )
 
 
+def read_cost_settings_supabase():
+    rows = supabase_request(
+        f"/rest/v1/{SUPABASE_COST_SETTINGS_TABLE}?id=eq.current&select=*&limit=1"
+    )
+    if not rows:
+        settings = default_cost_settings()
+        write_cost_settings_supabase(settings)
+        return settings
+    return db_to_cost_settings(rows[0])
+
+
+def write_cost_settings_supabase(settings):
+    supabase_request(
+        f"/rest/v1/{SUPABASE_COST_SETTINGS_TABLE}?on_conflict=id",
+        method="POST",
+        body=cost_settings_to_db(normalize_cost_settings(settings)),
+        extra_headers={"Prefer": "return=minimal,resolution=merge-duplicates"},
+    )
+
+
+def read_users_supabase():
+    rows = supabase_request(f"/rest/v1/{SUPABASE_USERS_TABLE}?select=*&order=login.asc")
+    return [db_to_user(row) for row in rows or []]
+
+
+def save_user_supabase(user):
+    supabase_request(
+        f"/rest/v1/{SUPABASE_USERS_TABLE}?on_conflict=login",
+        method="POST",
+        body=user_to_db(user),
+        extra_headers={"Prefer": "return=minimal,resolution=merge-duplicates"},
+    )
+
+
 def write_access_log(access):
     if not isinstance(access, dict):
         return
@@ -630,6 +879,51 @@ def normalize_price(price):
         "size": str(price.get("size", "")).strip(),
         "bath": str(price.get("bath", "")).strip(),
         "unitCost": parse_money(price.get("unitCost", 0)),
+        "weight": parse_decimal(price.get("weight", 0), 4),
+        "goldThousandth": parse_decimal(price.get("goldThousandth", 0), 6),
+    }
+
+
+def default_cost_settings():
+    return {"goldValue": 800, "rhodiumValue": 2500, "rhodiumFactor": 0.7}
+
+
+def normalize_cost_settings(settings):
+    return {
+        "goldValue": parse_money(settings.get("goldValue", settings.get("gold_value", 800))),
+        "rhodiumValue": parse_money(settings.get("rhodiumValue", settings.get("rhodium_value", 2500))),
+        "rhodiumFactor": parse_decimal(settings.get("rhodiumFactor", settings.get("rhodium_factor", 0.7)), 4),
+    }
+
+
+def default_user_record(user):
+    salt = token_hex(8)
+    return {
+        "login": user["login"],
+        "name": user["name"],
+        "role": user["role"],
+        "passwordHash": hash_password(user["password"], salt),
+        "passwordSalt": salt,
+        "mustChangePassword": bool(user.get("mustChangePassword", False)),
+    }
+
+
+def hash_password(password, salt):
+    return sha256(f"{salt}:{password}".encode("utf-8")).hexdigest()
+
+
+def verify_password(password, user):
+    salt = user.get("passwordSalt", "")
+    password_hash = user.get("passwordHash", "")
+    return bool(salt and password_hash and hash_password(password, salt) == password_hash)
+
+
+def public_user(user):
+    return {
+        "login": user.get("login", ""),
+        "name": user.get("name", ""),
+        "role": user.get("role", ""),
+        "mustChangePassword": bool(user.get("mustChangePassword")),
     }
 
 
@@ -639,6 +933,16 @@ def parse_money(value):
     text = str(value or "0").strip().replace(".", "").replace(",", ".")
     try:
         return round(float(text), 2)
+    except ValueError:
+        return 0
+
+
+def parse_decimal(value, places=4):
+    if isinstance(value, (int, float)):
+        return round(float(value), places)
+    text = str(value or "0").strip().replace(".", "").replace(",", ".")
+    try:
+        return round(float(text), places)
     except ValueError:
         return 0
 
@@ -741,6 +1045,8 @@ def price_to_db(price):
         "size": price.get("size", ""),
         "bath": price.get("bath", ""),
         "unit_cost": price.get("unitCost", 0),
+        "weight": price.get("weight", 0),
+        "gold_thousandth": price.get("goldThousandth", 0),
     }
 
 
@@ -750,7 +1056,28 @@ def db_to_price(row):
         "size": row.get("size", ""),
         "bath": row.get("bath", ""),
         "unitCost": float(row.get("unit_cost") or 0),
+        "weight": float(row.get("weight") or 0),
+        "goldThousandth": float(row.get("gold_thousandth") or 0),
     }
+
+
+def cost_settings_to_db(settings):
+    return {
+        "id": "current",
+        "gold_value": settings.get("goldValue", 800),
+        "rhodium_value": settings.get("rhodiumValue", 2500),
+        "rhodium_factor": settings.get("rhodiumFactor", 0.7),
+    }
+
+
+def db_to_cost_settings(row):
+    return normalize_cost_settings(
+        {
+            "goldValue": row.get("gold_value", 800),
+            "rhodiumValue": row.get("rhodium_value", 2500),
+            "rhodiumFactor": row.get("rhodium_factor", 0.7),
+        }
+    )
 
 
 def db_to_access_log(row):
@@ -762,6 +1089,28 @@ def db_to_access_log(row):
         "origin": row.get("origin", ""),
         "userAgent": row.get("user_agent", ""),
         "createdAt": row.get("created_at", ""),
+    }
+
+
+def user_to_db(user):
+    return {
+        "login": user.get("login", ""),
+        "name": user.get("name", ""),
+        "role": user.get("role", ""),
+        "password_hash": user.get("passwordHash", ""),
+        "password_salt": user.get("passwordSalt", ""),
+        "must_change_password": bool(user.get("mustChangePassword")),
+    }
+
+
+def db_to_user(row):
+    return {
+        "login": row.get("login", ""),
+        "name": row.get("name", ""),
+        "role": row.get("role", ""),
+        "passwordHash": row.get("password_hash", ""),
+        "passwordSalt": row.get("password_salt", ""),
+        "mustChangePassword": bool(row.get("must_change_password")),
     }
 
 
