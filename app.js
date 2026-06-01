@@ -148,6 +148,8 @@ const elements = {
   reportFilterStatus: document.querySelector("#reportFilterStatus"),
   reportFilterPriority: document.querySelector("#reportFilterPriority"),
   ordersList: document.querySelector("#ordersList"),
+  collaboratorOrdersList: document.querySelector("#collaboratorOrdersList"),
+  refreshMyOrders: document.querySelector("#refreshMyOrders"),
   orderCount: document.querySelector("#orderCount"),
   statusChart: document.querySelector("#statusChart"),
   bathChart: document.querySelector("#bathChart"),
@@ -223,6 +225,7 @@ async function init() {
   elements.reportSearchInput.addEventListener("input", renderReports);
   elements.reportFilterStatus.addEventListener("change", renderReports);
   elements.reportFilterPriority.addEventListener("change", renderReports);
+  elements.refreshMyOrders?.addEventListener("click", refreshOrders);
   elements.refreshMasterData?.addEventListener("click", loadMasterData);
   elements.costSettingsForm?.addEventListener("submit", handleCostSettingsSubmit);
   elements.priceForm?.addEventListener("submit", handlePriceSubmit);
@@ -1083,6 +1086,7 @@ function render() {
   renderOrders();
   renderDashboardTable();
   renderReports();
+  renderCollaboratorOrders();
   renderMasterPanel();
 }
 
@@ -1386,6 +1390,80 @@ function renderOrders() {
     card.querySelector("[data-delete]")?.addEventListener("click", () => deleteOrder(order.id));
     elements.ordersList.append(card);
   });
+}
+
+function renderCollaboratorOrders() {
+  if (!elements.collaboratorOrdersList || isInternalUser()) return;
+  const myOrders = getVisibleOrders().sort((a, b) => String(b.id || "").localeCompare(String(a.id || "")));
+  elements.collaboratorOrdersList.innerHTML = "";
+
+  if (!myOrders.length) {
+    elements.collaboratorOrdersList.innerHTML = '<div class="empty">Nenhum pedido enviado por este celular.</div>';
+    return;
+  }
+
+  myOrders.forEach((order) => {
+    const card = document.createElement("article");
+    card.className = "order-card compact-order-card";
+    const totalPieces = countPieces([order]);
+    const priorityClass = order.priority === "Urgente" ? "urgent" : "";
+    card.innerHTML = `
+      <div class="order-top">
+        <strong>${order.id}</strong>
+        <div class="order-tags">
+          <span class="pill ${priorityClass}">${order.priority}</span>
+          <span class="pill status-pill">${order.status}</span>
+        </div>
+      </div>
+      <div class="order-meta">
+        <span>${formatDate(order.requestDate)}</span>
+        <span>${order.origin}</span>
+        <span>${totalPieces} peças</span>
+        <span>${order.items.length} itens</span>
+      </div>
+      <ul class="order-items">
+        ${order.items.map((item) => `<li>${item.quantity}x ${item.model} · ${item.size} · ${item.bath}</li>`).join("")}
+      </ul>
+      <div class="order-footer collaborator-order-footer">
+        <span class="status-note">${statusHelperText(order.status)}</span>
+        <button class="action-button clone-action" type="button" data-clone="${order.id}" title="Clonar pedido" aria-label="Clonar pedido">
+          <svg viewBox="0 0 24 24" focusable="false">
+            <path d="M8 7V4c0-1.1.9-2 2-2h8c1.1 0 2 .9 2 2v10c0 1.1-.9 2-2 2h-3v3c0 1.1-.9 2-2 2H5c-1.1 0-2-.9-2-2V9c0-1.1.9-2 2-2h3Zm2 0h3c1.1 0 2 .9 2 2v5h3V4h-8v3ZM5 9v10h8V9H5Z"/>
+          </svg>
+        </button>
+      </div>
+    `;
+    card.querySelector("[data-clone]").addEventListener("click", () => cloneOrder(order.id));
+    elements.collaboratorOrdersList.append(card);
+  });
+}
+
+function statusHelperText(status) {
+  const messages = {
+    "Pedido Recebido": "Recebido pela fábrica",
+    "Em separação": "Em andamento",
+    Entregue: "Pedido finalizado",
+  };
+  return messages[status] || status || "";
+}
+
+function cloneOrder(id) {
+  const order = orders.find((item) => item.id === id);
+  if (!order || isInternalUser()) return;
+
+  elements.editingId.value = "";
+  elements.formTitle.textContent = "Clonar pedido";
+  elements.orderNumberPreview.textContent = "Novo pedido a cada envio";
+  elements.requester.value = currentSession?.name || order.requester || "";
+  elements.origin.value = order.origin || "";
+  elements.priority.value = order.priority || "Normal";
+  elements.status.value = statuses[0];
+  elements.notes.value = order.notes || "";
+  elements.itemsList.innerHTML = "";
+  order.items.forEach((item) => addItemRow({ model: item.model, size: item.size, bath: item.bath, quantity: item.quantity }));
+  if (!order.items.length) addItemRow();
+  showView("requestView");
+  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
 function canManageOrder(order) {
