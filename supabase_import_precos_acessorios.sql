@@ -1,6 +1,8 @@
 alter table public.accessory_prices add column if not exists weight numeric(12,4) not null default 0;
 alter table public.accessory_prices add column if not exists gold_thousandth numeric(12,6) not null default 0;
 alter table public.accessory_prices alter column unit_cost type numeric(14,6);
+alter table public.accessory_prices drop constraint if exists accessory_prices_bath_check;
+alter table public.accessory_prices add constraint accessory_prices_bath_check check (bath in ('Bruto', 'Ouro', 'Ródio'));
 
 with source_prices(model, size, unit_cost) as (
   values
@@ -45,19 +47,22 @@ with source_prices(model, size, unit_cost) as (
     ('Tarraxa', 'G', 0.06),
     ('Tarraxa', 'BABY', 0.06)
 ),
-baths(bath) as (
-  values ('Ouro'), ('Ródio')
+delete_old_bath_duplicates as (
+  delete from public.accessory_prices old_prices
+  using source_prices
+  where old_prices.model = source_prices.model
+    and old_prices.size = source_prices.size
+    and old_prices.bath <> 'Bruto'
 )
 insert into public.accessory_prices (model, size, bath, unit_cost, weight, gold_thousandth)
 select
   source_prices.model,
   source_prices.size,
-  baths.bath,
+  'Bruto',
   source_prices.unit_cost,
   0,
   0
 from source_prices
-cross join baths
 on conflict (model, size, bath) do update
 set
   unit_cost = excluded.unit_cost,
