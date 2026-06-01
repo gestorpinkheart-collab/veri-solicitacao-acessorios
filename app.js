@@ -897,11 +897,11 @@ function recalculateExistingItemCost(item, existingItem) {
   return {
     ...item,
     quantity,
-    unitCost: Number(existingItem.unitCost || 0),
+    unitCost: roundCost(existingItem.unitCost || 0),
     weight: Number(existingItem.weight || 0),
     goldThousandth: Number(existingItem.goldThousandth || 0),
-    bathCost: Number(existingItem.bathCost || 0),
-    totalUnitCost,
+    bathCost: roundCost(existingItem.bathCost || 0),
+    totalUnitCost: roundCost(totalUnitCost),
     lineCost: roundMoney(totalUnitCost * quantity),
     costSnapshot: existingItem.costSnapshot || {},
   };
@@ -919,11 +919,11 @@ function enrichItemCost(item) {
   return {
     ...item,
     quantity,
-    unitCost: roundMoney(unitCost),
+    unitCost: roundCost(unitCost),
     weight,
     goldThousandth,
-    bathCost: roundMoney(bathCost),
-    totalUnitCost: roundMoney(totalUnitCost),
+    bathCost: roundCost(bathCost),
+    totalUnitCost: roundCost(totalUnitCost),
     lineCost: roundMoney(totalUnitCost * quantity),
     costSnapshot: {
       goldValue: Number(costSettings.goldValue || 0),
@@ -958,8 +958,8 @@ function calculatePricePreview(price) {
     goldThousandth: price.goldThousandth,
   });
   return {
-    bathCost: roundMoney(bathCost),
-    totalUnitCost: roundMoney(Number(price.unitCost || 0) + bathCost),
+    bathCost: roundCost(bathCost),
+    totalUnitCost: roundCost(Number(price.unitCost || 0) + bathCost),
   };
 }
 
@@ -1161,11 +1161,11 @@ function renderPrices() {
       <td>${price.model}</td>
       <td>${price.size}</td>
       <td>${price.bath}</td>
-      <td>${formatMoney(price.unitCost)}</td>
+      <td>${formatCostMoney(price.unitCost)}</td>
       <td>${Number(price.weight || 0).toLocaleString("pt-BR", { maximumFractionDigits: 3 })}</td>
       <td>${Number(price.goldThousandth || 0).toLocaleString("pt-BR", { maximumFractionDigits: 4 })}</td>
-      <td>${formatMoney(preview.bathCost)}</td>
-      <td>${formatMoney(preview.totalUnitCost)}</td>
+      <td>${formatCostMoney(preview.bathCost)}</td>
+      <td>${formatCostMoney(preview.totalUnitCost)}</td>
       <td><button class="action-button danger-action" type="button" title="Excluir" aria-label="Excluir preço" data-price-delete="${index}">
         <svg viewBox="0 0 24 24" focusable="false">
           <path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm-3 6h12l-.8 11H6.8L6 9Zm4 2v7h2v-7h-2Zm4 0v7h2v-7h-2Z"/>
@@ -1735,8 +1735,21 @@ function formatMoney(value) {
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(value || 0));
 }
 
+function formatCostMoney(value) {
+  return new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 6,
+  }).format(Number(value || 0));
+}
+
 function roundMoney(value) {
   return Math.round((Number(value || 0) + Number.EPSILON) * 100) / 100;
+}
+
+function roundCost(value) {
+  return Math.round((Number(value || 0) + Number.EPSILON) * 1000000) / 1000000;
 }
 
 function normalizeCostSettings(settings = {}) {

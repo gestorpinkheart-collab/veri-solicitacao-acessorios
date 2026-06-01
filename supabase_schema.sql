@@ -73,7 +73,7 @@ create table if not exists public.accessory_prices (
   model text not null,
   size text not null,
   bath text not null check (bath in ('Ouro', 'Ródio')),
-  unit_cost numeric(12,2) not null default 0,
+  unit_cost numeric(14,6) not null default 0,
   weight numeric(12,4) not null default 0,
   gold_thousandth numeric(12,6) not null default 0,
   created_at timestamptz not null default now(),
@@ -83,6 +83,7 @@ create table if not exists public.accessory_prices (
 
 alter table public.accessory_prices add column if not exists weight numeric(12,4) not null default 0;
 alter table public.accessory_prices add column if not exists gold_thousandth numeric(12,6) not null default 0;
+alter table public.accessory_prices alter column unit_cost type numeric(14,6);
 
 create index if not exists accessory_prices_model_idx on public.accessory_prices (model);
 

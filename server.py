@@ -878,7 +878,7 @@ def normalize_price(price):
         "model": str(price.get("model", "")).strip(),
         "size": str(price.get("size", "")).strip(),
         "bath": str(price.get("bath", "")).strip(),
-        "unitCost": parse_money(price.get("unitCost", 0)),
+        "unitCost": parse_decimal(price.get("unitCost", 0), 6),
         "weight": parse_decimal(price.get("weight", 0), 4),
         "goldThousandth": parse_decimal(price.get("goldThousandth", 0), 6),
     }
