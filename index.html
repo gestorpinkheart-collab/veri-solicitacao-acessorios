@@ -1,0 +1,603 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>VERI | Solicitação de Peças</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <section class="entry-screen" id="entryScreen" aria-label="Login">
+      <div class="entry-card">
+        <div class="logo-frame">
+          <img class="entry-logo" src="logo-veri.png" alt="VERI">
+        </div>
+        <div class="login-title">
+          <h1>Solicitação de acessórios</h1>
+        </div>
+        <form id="loginForm" class="login-form">
+          <div class="profile-cards" role="tablist" aria-label="Tipo de acesso">
+            <button class="profile-card active" id="commonLoginTab" type="button" data-login-mode="common">
+              <span class="profile-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false">
+                  <path d="M12 12a4 4 0 1 0-4-4 4 4 0 0 0 4 4Zm0 2c-4 0-7 2.1-7 5v1h14v-1c0-2.9-3-5-7-5Z"/>
+                </svg>
+              </span>
+              <span class="profile-title">Colaborador</span>
+            </button>
+            <button class="profile-card" id="consultantLoginTab" type="button" data-login-mode="consultant">
+              <span class="profile-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false">
+                  <path d="M8 3h8l1 2h3v16H4V5h3l1-2Zm1.2 4v2h5.6V7H9.2Zm0 4v2h7.6v-2H9.2Zm0 4v2h4.8v-2H9.2Z"/>
+                </svg>
+              </span>
+              <span class="profile-title">Gestão de Pedidos (Fábrica)</span>
+            </button>
+            <button class="profile-card" id="masterLoginTab" type="button" data-login-mode="master">
+              <span class="profile-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" focusable="false">
+                  <path d="M12 2 20 5v6c0 5-3.4 9.4-8 11-4.6-1.6-8-6-8-11V5l8-3Zm0 5a3 3 0 0 0-3 3v1H8v6h8v-6h-1v-1a3 3 0 0 0-3-3Zm-1 4v-1a1 1 0 1 1 2 0v1h-2Z"/>
+                </svg>
+              </span>
+              <span class="profile-title">Master</span>
+            </button>
+          </div>
+          <div id="commonLoginFields" class="login-mode active-login-mode">
+            <label>
+              Nome do solicitante
+              <input id="loginName" type="text" placeholder="Digite seu nome" autocomplete="off">
+            </label>
+            <label>
+              Celular para avisos
+              <input id="loginPhone" type="tel" placeholder="(11) 99999-9999" autocomplete="off">
+            </label>
+          </div>
+          <div id="internalLoginFields" class="login-mode">
+            <label>
+              Login
+              <input id="internalLogin" type="text" placeholder="Digite seu login" autocomplete="off">
+            </label>
+            <label>
+              Senha
+              <input id="masterPassword" type="password" placeholder="Digite sua senha" autocomplete="new-password">
+            </label>
+          </div>
+          <p class="login-error" id="loginError" role="alert"></p>
+          <div class="login-actions">
+            <button class="primary-button" type="submit">Entrar</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <section class="password-screen" id="passwordScreen" hidden>
+      <div class="entry-card">
+        <div class="login-title">
+          <p class="eyebrow">Primeiro acesso</p>
+          <h1>Troque sua senha</h1>
+        </div>
+        <form id="passwordForm" class="login-form">
+          <label>
+            Nova senha
+            <input id="newPassword" type="password" minlength="4" required>
+          </label>
+          <label>
+            Confirmar senha
+            <input id="confirmPassword" type="password" minlength="4" required>
+          </label>
+          <p class="login-error" id="passwordError" role="alert"></p>
+          <div class="login-actions">
+            <button class="primary-button" type="submit">Salvar e entrar</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <div class="app-shell" id="appShell" hidden>
+      <header class="app-header">
+        <div class="brand-block">
+          <div class="logo-frame header-logo-frame">
+            <img class="brand-logo" src="logo-veri.png" alt="VERI">
+          </div>
+          <h1>SOLICITAÇÃO DE ACESSÓRIOS – FÁBRICA</h1>
+        </div>
+      </header>
+
+      <section class="session-strip" aria-label="Sessão e ações rápidas">
+        <span class="user-badge" id="activeUser"></span>
+        <div class="session-actions">
+          <button class="ghost-button" id="logout" type="button">Sair</button>
+        </div>
+      </section>
+
+      <nav class="app-nav internal-only" aria-label="Menu principal">
+        <button class="nav-button active" type="button" data-view="managementView" onclick="showView('managementView')">Gestão de pedidos</button>
+        <button class="nav-button" type="button" data-view="reportsView" onclick="showView('reportsView')">Relatórios</button>
+        <button class="nav-button" type="button" data-view="dashboardView" onclick="showView('dashboardView')">Dashboard</button>
+        <button class="nav-button master-only" type="button" data-view="masterView" onclick="showView('masterView')">Master</button>
+      </nav>
+
+      <main>
+        <section id="managementView" class="app-view active-view">
+          <section class="management-panel" aria-label="Gestão dos pedidos">
+            <div class="panel-title-row">
+              <div>
+                <p class="eyebrow">Acompanhamento</p>
+                <h2>Gestão de pedidos</h2>
+              </div>
+              <span id="orderCount">0 encontrados</span>
+            </div>
+            <div class="filters">
+              <label>
+                Buscar
+                <input id="searchInput" type="search" placeholder="Pedido, solicitante, loja ou peça">
+              </label>
+              <label>
+                Status
+                <select id="filterStatus">
+                  <option value="">Todos</option>
+                </select>
+              </label>
+              <label>
+                Prioridade
+                <select id="filterPriority">
+                  <option value="">Todas</option>
+                  <option>Normal</option>
+                  <option>Urgente</option>
+                </select>
+              </label>
+            </div>
+            <div class="status-widgets" aria-label="Resumo por status">
+              <article class="status-widget received">
+                <span>Recebidos</span>
+                <strong id="widgetReceived">0</strong>
+              </article>
+              <article class="status-widget progress">
+                <span>Em separação</span>
+                <strong id="widgetProgress">0</strong>
+              </article>
+              <article class="status-widget delivered">
+                <span>Entregues</span>
+                <strong id="widgetDelivered">0</strong>
+              </article>
+            </div>
+            <div id="ordersList" class="orders-list"></div>
+          </section>
+        </section>
+
+        <section id="dashboardView" class="app-view">
+          <section class="metrics-grid" aria-label="Indicadores de pedidos">
+            <article class="metric">
+              <span>Novos abertos</span>
+              <strong id="metricTotal">0</strong>
+            </article>
+            <article class="metric urgent">
+              <span>Urgentes</span>
+              <strong id="metricUrgent">0</strong>
+            </article>
+            <article class="metric">
+              <span>Em andamento</span>
+              <strong id="metricOpen">0</strong>
+            </article>
+            <article class="metric">
+              <span>Finalizados</span>
+              <strong id="metricPieces">0</strong>
+            </article>
+          </section>
+
+          <section class="management-panel dashboard-filter-panel">
+            <div class="panel-title-row">
+              <div>
+                <p class="eyebrow">Filtros gerenciais</p>
+                <h2>Gestão à vista</h2>
+              </div>
+            </div>
+            <div class="filters">
+              <label>
+                De
+                <input id="dashboardDateFrom" type="date">
+              </label>
+              <label>
+                Até
+                <input id="dashboardDateTo" type="date">
+              </label>
+              <label>
+                Status
+                <select id="dashboardFilterStatus">
+                  <option value="">Todos</option>
+                </select>
+              </label>
+              <label>
+                Setor / Loja
+                <select id="dashboardFilterOrigin">
+                  <option value="">Todos</option>
+                </select>
+              </label>
+              <label>
+                Solicitante
+                <input id="dashboardFilterRequester" type="search" placeholder="Nome">
+              </label>
+            </div>
+          </section>
+
+          <section class="dashboard-grid">
+            <div class="chart-panel">
+              <h2>Status dos pedidos</h2>
+              <div id="statusChart" class="bar-chart"></div>
+            </div>
+            <div class="chart-panel">
+              <h2>Peças por banho</h2>
+              <div id="bathChart" class="bar-chart"></div>
+            </div>
+            <div class="chart-panel">
+              <h2>Pedidos por loja</h2>
+              <div id="originChart" class="bar-chart"></div>
+            </div>
+            <div class="chart-panel">
+              <h2>Frequência de pedidos</h2>
+              <div id="frequencyChart" class="bar-chart"></div>
+            </div>
+          </section>
+          <section class="dashboard-grid">
+            <div class="chart-panel">
+              <h2>Pedidos por solicitante</h2>
+              <div id="requesterChart" class="bar-chart"></div>
+            </div>
+            <div class="chart-panel">
+              <h2>Peças por solicitante</h2>
+              <div id="requesterPiecesChart" class="bar-chart"></div>
+            </div>
+          </section>
+        </section>
+
+        <section id="requestView" class="app-view">
+          <aside class="form-panel" aria-label="Formulário de solicitação">
+            <div class="panel-title-row">
+              <div>
+                <p class="eyebrow">Nova solicitação</p>
+                <h2 id="formTitle">Adicionar itens ao pedido</h2>
+              </div>
+              <span id="orderNumberPreview">Novo pedido a cada envio</span>
+            </div>
+
+            <form id="orderForm">
+              <input type="hidden" id="editingId">
+              <div class="field-grid">
+                <label>
+                  Solicitante
+                  <input id="requester" type="text" placeholder="Nome do colaborador" required>
+                </label>
+                <label>
+                  Loja / Showroom
+                  <select id="origin" required>
+                    <option value="">Selecione</option>
+                  </select>
+                </label>
+                <label>
+                  Prioridade
+                  <select id="priority" required>
+                    <option value="">Selecione</option>
+                    <option>Normal</option>
+                    <option>Urgente</option>
+                  </select>
+                </label>
+                <label class="admin-only">
+                  Status
+                  <select id="status" required></select>
+                </label>
+              </div>
+
+              <div class="items-heading">
+                <h3>Itens do pedido</h3>
+                <button class="ghost-button small" id="addItem" type="button">Adicionar item</button>
+              </div>
+              <div id="itemsList" class="items-list"></div>
+
+              <button class="add-row-button" id="addItemBottom" type="button">Adicionar mais um item</button>
+
+              <label>
+                Observações
+                <textarea id="notes" rows="3" placeholder="Informações adicionais para análise da fábrica"></textarea>
+              </label>
+
+              <div class="form-actions request-actions">
+                <button class="ghost-button" id="cancelEdit" type="button">Limpar</button>
+                <button class="primary-button" type="submit">Enviar solicitação</button>
+              </div>
+            </form>
+          </aside>
+
+          <section class="collaborator-orders-panel collaborator-only" aria-label="Consulta de pedidos do colaborador">
+            <div class="panel-title-row">
+              <div>
+                <p class="eyebrow">Meus pedidos</p>
+                <h2>Consulta de status</h2>
+              </div>
+              <button class="ghost-button small" id="refreshMyOrders" type="button">Atualizar</button>
+            </div>
+            <div id="collaboratorOrdersList" class="orders-list compact-orders"></div>
+          </section>
+        </section>
+
+        <section id="reportsView" class="app-view">
+          <section class="report-panel" id="printArea">
+            <div class="report-header">
+              <img class="report-logo" src="logo-veri.png" alt="VERI">
+              <div>
+                <p class="eyebrow">Relatórios</p>
+                <h2>Resumo de Pedidos</h2>
+              </div>
+              <div class="report-actions print-hidden">
+                <button class="export-button" id="exportCsv" type="button" title="Exportar CSV" aria-label="Exportar CSV">CSV</button>
+                <button class="export-button" id="exportXlsx" type="button" title="Exportar Excel" aria-label="Exportar Excel">Excel</button>
+                <button class="export-button" id="exportPdf" type="button" title="Gerar PDF" aria-label="Gerar PDF">PDF</button>
+                <button class="export-button" id="printReport" type="button" title="Imprimir" aria-label="Imprimir">Imprimir</button>
+              </div>
+            </div>
+            <div class="filters print-hidden">
+              <label>
+                Pesquisar
+                <input id="reportSearchInput" type="search" placeholder="Pedido, solicitante, celular, loja ou peça">
+              </label>
+              <label>
+                Status
+                <select id="reportFilterStatus">
+                  <option value="">Todos</option>
+                </select>
+              </label>
+              <label>
+                Prioridade
+                <select id="reportFilterPriority">
+                  <option value="">Todas</option>
+                  <option>Normal</option>
+                  <option>Urgente</option>
+                </select>
+              </label>
+            </div>
+            <div class="report-summary">
+              <span><strong id="reportTotalOrders">0</strong> pedidos</span>
+              <span><strong id="reportOpenOrders">0</strong> em aberto</span>
+              <span><strong id="reportTotalPieces">0</strong> peças</span>
+            </div>
+            <div class="table-wrap">
+              <table class="report-table">
+                <thead>
+                  <tr>
+                    <th>Pedido</th>
+                    <th>Solicitante</th>
+                    <th>Celular</th>
+                    <th>Origem</th>
+                    <th>Status</th>
+                    <th>Prioridade</th>
+                    <th>Peças</th>
+                    <th>Itens</th>
+                  </tr>
+                </thead>
+                <tbody id="reportBody"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section id="masterView" class="app-view">
+          <section class="management-panel master-control-panel">
+            <div class="panel-title-row">
+              <div>
+                <p class="eyebrow">Master</p>
+                <h2>Controle gerencial</h2>
+              </div>
+              <button class="ghost-button small" id="refreshMasterData" type="button">Atualizar</button>
+            </div>
+            <div class="master-tabs" role="tablist" aria-label="Menu Master">
+              <button class="master-tab active" type="button" data-master-tab="masterCostDashboard">Custos dos pedidos</button>
+              <button class="master-tab" type="button" data-master-tab="masterBathCosts">Custos de banho</button>
+              <button class="master-tab" type="button" data-master-tab="masterPieceCosts">Valores das peças</button>
+              <button class="master-tab" type="button" data-master-tab="masterSystemLogs">Registros</button>
+            </div>
+          </section>
+
+          <section id="masterCostDashboard" class="master-pane active-master-pane">
+            <section class="management-panel">
+              <div class="panel-title-row">
+                <div>
+                  <p class="eyebrow">Custos</p>
+                  <h2>Análise de pedidos</h2>
+                </div>
+              </div>
+              <div class="filters">
+                <label>
+                  De
+                  <input id="masterCostDateFrom" type="date">
+                </label>
+                <label>
+                  Até
+                  <input id="masterCostDateTo" type="date">
+                </label>
+                <label>
+                  Loja
+                  <select id="masterCostOrigin">
+                    <option value="">Todas</option>
+                  </select>
+                </label>
+                <label>
+                  Solicitante
+                  <input id="masterCostRequester" type="search" placeholder="Nome">
+                </label>
+              </div>
+              <div class="report-summary">
+                <span><strong id="masterCostOrders">0</strong> pedidos</span>
+                <span><strong id="masterCostPieces">0</strong> peças</span>
+                <span><strong id="masterCostTotal">R$ 0,00</strong> custo bruto</span>
+              </div>
+              <div class="table-wrap compact-table">
+                <table class="report-table">
+                  <thead>
+                    <tr>
+                      <th>Pedido</th>
+                      <th>Data</th>
+                      <th>Solicitante</th>
+                      <th>Loja</th>
+                      <th>Status</th>
+                      <th>Peças</th>
+                      <th>Custo bruto</th>
+                      <th>Custo banho</th>
+                      <th>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody id="masterCostBody"></tbody>
+                </table>
+              </div>
+            </section>
+          </section>
+
+          <section id="masterBathCosts" class="master-pane">
+            <div class="management-panel">
+              <div class="panel-title-row">
+                <div>
+                  <p class="eyebrow">Custos</p>
+                  <h2>Custos de banho e metais</h2>
+                </div>
+              </div>
+              <form id="costSettingsForm" class="price-form">
+                <label>
+                  Valor do Ouro
+                  <input id="costGoldValue" type="number" min="0" step="0.01" placeholder="800,00" required>
+                </label>
+                <label>
+                  Valor do Ródio
+                  <input id="costRhodiumValue" type="number" min="0" step="0.01" placeholder="2500,00" required>
+                </label>
+                <label>
+                  Fator Ródio
+                  <input id="costRhodiumFactor" type="number" min="0" step="0.01" placeholder="0,70" required>
+                </label>
+                <button class="primary-button" type="submit">Salvar parâmetros</button>
+              </form>
+            </div>
+          </section>
+
+          <section id="masterPieceCosts" class="master-pane">
+            <div class="management-panel">
+              <div class="panel-title-row">
+                <div>
+                  <p class="eyebrow">Custos</p>
+                  <h2>Cadastro de valor da peça bruta</h2>
+                </div>
+              </div>
+              <form id="priceForm" class="price-form">
+                <label>
+                  Modelo
+                  <select id="priceModel" required></select>
+                </label>
+                <label>
+                  Tamanho
+                  <select id="priceSize" required></select>
+                </label>
+                <label>
+                  Valor da peça bruta
+                  <input id="priceValue" type="number" min="0" step="0.000001" placeholder="0,000000" required>
+                </label>
+                <label>
+                  Peso da peça
+                  <input id="priceWeight" type="number" min="0" step="0.001" placeholder="0,000">
+                </label>
+                <label>
+                  Milésimo Ouro
+                  <input id="priceGoldThousandth" type="number" min="0" step="0.0001" placeholder="0,0000">
+                </label>
+                <button class="primary-button" type="submit">Salvar custo</button>
+              </form>
+              <div class="table-wrap compact-table">
+                <table class="report-table">
+                  <thead>
+                    <tr>
+                      <th>Modelo</th>
+                      <th>Tamanho</th>
+                      <th>Peça bruta</th>
+                      <th>Peso</th>
+                      <th>Milésimo</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody id="pricesBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <section id="masterSystemLogs" class="master-pane">
+            <div class="management-panel">
+              <div class="panel-title-row">
+                <div>
+                  <p class="eyebrow">Auditoria</p>
+                  <h2>Registros do sistema</h2>
+                </div>
+              </div>
+              <div class="report-summary">
+                <span><strong id="masterAccessCount">0</strong> acessos</span>
+                <span><strong id="masterOrderHistoryCount">0</strong> movimentações</span>
+              </div>
+              <details class="log-details" open>
+                <summary>Acessos ao sistema</summary>
+                <div class="table-wrap compact-table">
+                  <table class="report-table">
+                    <thead>
+                      <tr>
+                        <th>Data/Hora</th>
+                        <th>Usuário</th>
+                        <th>Perfil</th>
+                        <th>Origem</th>
+                      </tr>
+                    </thead>
+                    <tbody id="accessLogsBody"></tbody>
+                  </table>
+                </div>
+              </details>
+              <details class="log-details">
+                <summary>Histórico dos pedidos</summary>
+                <div class="table-wrap compact-table">
+                  <table class="report-table">
+                    <thead>
+                      <tr>
+                        <th>Data/Hora</th>
+                        <th>Pedido</th>
+                        <th>Ação</th>
+                        <th>Usuário</th>
+                        <th>Perfil</th>
+                      </tr>
+                    </thead>
+                    <tbody id="orderHistoryBody"></tbody>
+                  </table>
+                </div>
+              </details>
+              </div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <template id="itemTemplate">
+      <div class="item-row">
+        <label>
+          Modelo
+          <select class="item-model" required></select>
+        </label>
+        <label>
+          Tamanho
+          <select class="item-size" required></select>
+        </label>
+        <label>
+          Banho
+          <select class="item-bath" required></select>
+        </label>
+        <label>
+          Qtd.
+          <input class="item-quantity" type="number" min="1" placeholder="0" required>
+        </label>
+        <button class="icon-button remove-item" type="button" title="Remover item" aria-label="Remover item">×</button>
+      </div>
+    </template>
+
+    <script src="app.js"></script>
+  </body>
+</html>

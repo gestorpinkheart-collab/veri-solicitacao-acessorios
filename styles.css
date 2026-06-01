@@ -981,8 +981,64 @@ select:disabled {
   color: var(--accent-dark);
 }
 
-.master-grid {
-  align-items: start;
+.master-control-panel {
+  margin-bottom: 16px;
+}
+
+.master-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.master-tab {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--accent-dark);
+  font-weight: 800;
+  min-height: 42px;
+  padding: 0 14px;
+  cursor: pointer;
+  box-shadow: 0 10px 22px rgba(47, 71, 61, 0.06);
+}
+
+.master-tab.active,
+.master-tab:hover {
+  background: linear-gradient(135deg, var(--accent), var(--accent-dark));
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.master-pane {
+  display: none;
+}
+
+.active-master-pane {
+  display: block;
+}
+
+.log-details {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.66);
+  margin-top: 12px;
+  overflow: hidden;
+}
+
+.log-details summary {
+  cursor: pointer;
+  font-weight: 800;
+  color: var(--accent-dark);
+  padding: 12px 14px;
+  background: var(--surface-muted);
+}
+
+.log-details .table-wrap {
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
 }
 
 .price-form {

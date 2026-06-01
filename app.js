@@ -169,6 +169,16 @@ const elements = {
   refreshMasterData: document.querySelector("#refreshMasterData"),
   masterAccessCount: document.querySelector("#masterAccessCount"),
   masterOrderHistoryCount: document.querySelector("#masterOrderHistoryCount"),
+  masterTabButtons: document.querySelectorAll("[data-master-tab]"),
+  masterPanes: document.querySelectorAll(".master-pane"),
+  masterCostDateFrom: document.querySelector("#masterCostDateFrom"),
+  masterCostDateTo: document.querySelector("#masterCostDateTo"),
+  masterCostOrigin: document.querySelector("#masterCostOrigin"),
+  masterCostRequester: document.querySelector("#masterCostRequester"),
+  masterCostOrders: document.querySelector("#masterCostOrders"),
+  masterCostPieces: document.querySelector("#masterCostPieces"),
+  masterCostTotal: document.querySelector("#masterCostTotal"),
+  masterCostBody: document.querySelector("#masterCostBody"),
   accessLogsBody: document.querySelector("#accessLogsBody"),
   orderHistoryBody: document.querySelector("#orderHistoryBody"),
   costSettingsForm: document.querySelector("#costSettingsForm"),
@@ -178,7 +188,6 @@ const elements = {
   priceForm: document.querySelector("#priceForm"),
   priceModel: document.querySelector("#priceModel"),
   priceSize: document.querySelector("#priceSize"),
-  priceBath: document.querySelector("#priceBath"),
   priceValue: document.querySelector("#priceValue"),
   priceWeight: document.querySelector("#priceWeight"),
   priceGoldThousandth: document.querySelector("#priceGoldThousandth"),
@@ -227,6 +236,13 @@ async function init() {
   elements.reportFilterPriority.addEventListener("change", renderReports);
   elements.refreshMyOrders?.addEventListener("click", refreshOrders);
   elements.refreshMasterData?.addEventListener("click", loadMasterData);
+  elements.masterTabButtons.forEach((button) => {
+    button.addEventListener("click", () => showMasterTab(button.dataset.masterTab));
+  });
+  elements.masterCostDateFrom?.addEventListener("change", renderMasterPanel);
+  elements.masterCostDateTo?.addEventListener("change", renderMasterPanel);
+  elements.masterCostOrigin?.addEventListener("change", renderMasterPanel);
+  elements.masterCostRequester?.addEventListener("input", renderMasterPanel);
   elements.costSettingsForm?.addEventListener("submit", handleCostSettingsSubmit);
   elements.priceForm?.addEventListener("submit", handlePriceSubmit);
   elements.priceModel?.addEventListener("change", () => populatePriceSizeOptions());
@@ -452,6 +468,11 @@ function showView(viewId) {
 
 window.showView = showView;
 
+function showMasterTab(tabId) {
+  elements.masterTabButtons.forEach((button) => button.classList.toggle("active", button.dataset.masterTab === tabId));
+  elements.masterPanes.forEach((pane) => pane.classList.toggle("active-master-pane", pane.id === tabId));
+}
+
 function logout() {
   sessionStorage.removeItem(SESSION_KEY);
   currentSession = null;
@@ -487,8 +508,16 @@ function populatePriceOptions() {
   if (!elements.priceModel) return;
   elements.priceModel.innerHTML = '<option value="">Selecione</option>';
   Object.keys(partSizes).forEach((model) => elements.priceModel.append(new Option(model, model)));
-  populateBathOptions(elements.priceBath);
+  populateMasterCostOrigins();
   populatePriceSizeOptions();
+}
+
+function populateMasterCostOrigins() {
+  if (!elements.masterCostOrigin) return;
+  const selected = elements.masterCostOrigin.value;
+  elements.masterCostOrigin.innerHTML = '<option value="">Todas</option>';
+  origins.forEach((origin) => elements.masterCostOrigin.append(new Option(origin, origin)));
+  elements.masterCostOrigin.value = selected;
 }
 
 function populatePriceSizeOptions(selectedSize = "") {
@@ -772,7 +801,7 @@ async function handlePriceSubmit(event) {
   const price = {
     model: elements.priceModel.value,
     size: elements.priceSize.value,
-    bath: elements.priceBath.value,
+    bath: "Bruto",
     unitCost: Number(elements.priceValue.value || 0),
     weight: Number(elements.priceWeight.value || 0),
     goldThousandth: Number(elements.priceGoldThousandth.value || 0),
@@ -781,7 +810,7 @@ async function handlePriceSubmit(event) {
   prices = [
     price,
     ...prices.filter(
-      (item) => !(item.model === price.model && item.size === price.size && item.bath === price.bath)
+      (item) => !(item.model === price.model && item.size === price.size)
     ),
   ];
 
@@ -798,6 +827,17 @@ async function handlePriceSubmit(event) {
 async function deletePrice(index) {
   if (!isMasterUser()) return;
   prices.splice(index, 1);
+  try {
+    await savePrices();
+    renderMasterPanel();
+  } catch (error) {
+    alert(`Não foi possível excluir o preço.\n\n${error.message}`);
+  }
+}
+
+async function deletePiecePrice(model, size) {
+  if (!isMasterUser()) return;
+  prices = prices.filter((price) => !(price.model === model && price.size === size));
   try {
     await savePrices();
     renderMasterPanel();
@@ -934,8 +974,10 @@ function enrichItemCost(item) {
 }
 
 function findPrice(item) {
-  return prices.find(
-    (price) => price.model === item.model && price.size === item.size && normalizeBath(price.bath) === normalizeBath(item.bath)
+  return (
+    prices.find((price) => price.model === item.model && price.size === item.size && price.bath === "Bruto") ||
+    prices.find((price) => price.model === item.model && price.size === item.size && normalizeBath(price.bath) === normalizeBath(item.bath)) ||
+    prices.find((price) => price.model === item.model && price.size === item.size)
   );
 }
 
@@ -1091,11 +1133,12 @@ function render() {
 }
 
 function renderMasterPanel() {
-  if (!isMasterUser() || !elements.accessLogsBody) return;
+  if (!isMasterUser() || !elements.masterCostBody) return;
   const historyRows = getOrderHistoryRows();
   elements.masterAccessCount.textContent = accessLogs.length;
   elements.masterOrderHistoryCount.textContent = historyRows.length;
   renderCostSettings();
+  renderMasterCostDashboard();
   renderAccessLogs();
   renderOrderHistory(historyRows);
   renderPrices();
@@ -1106,6 +1149,83 @@ function renderCostSettings() {
   elements.costGoldValue.value = Number(costSettings.goldValue || 800);
   elements.costRhodiumValue.value = Number(costSettings.rhodiumValue || 2500);
   elements.costRhodiumFactor.value = Number(costSettings.rhodiumFactor || 0.7);
+}
+
+function renderMasterCostDashboard() {
+  const rows = getMasterCostRows();
+  const totalPieces = rows.reduce((sum, row) => sum + row.pieces, 0);
+  const totalRawCost = rows.reduce((sum, row) => sum + row.rawCost, 0);
+
+  elements.masterCostOrders.textContent = rows.length;
+  elements.masterCostPieces.textContent = totalPieces;
+  elements.masterCostTotal.textContent = formatCostMoney(totalRawCost);
+  elements.masterCostBody.innerHTML = "";
+
+  if (!rows.length) {
+    elements.masterCostBody.innerHTML = '<tr><td colspan="9">Nenhum pedido encontrado para os filtros.</td></tr>';
+    return;
+  }
+
+  rows.forEach((row) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${row.id}</td>
+      <td>${formatDate(row.requestDate)}</td>
+      <td>${row.requester}</td>
+      <td>${row.origin}</td>
+      <td>${row.status}</td>
+      <td>${row.pieces}</td>
+      <td>${formatCostMoney(row.rawCost)}</td>
+      <td>${formatCostMoney(row.bathCost)}</td>
+      <td>${formatCostMoney(row.totalCost)}</td>
+    `;
+    elements.masterCostBody.append(tr);
+  });
+}
+
+function getMasterCostRows() {
+  const dateFrom = elements.masterCostDateFrom?.value || "";
+  const dateTo = elements.masterCostDateTo?.value || "";
+  const origin = elements.masterCostOrigin?.value || "";
+  const requester = normalizeText(elements.masterCostRequester?.value || "");
+
+  return orders
+    .filter((order) => {
+      const orderDate = order.requestDate || "";
+      return (
+        (!dateFrom || orderDate >= dateFrom) &&
+        (!dateTo || orderDate <= dateTo) &&
+        (!origin || order.origin === origin) &&
+        (!requester || normalizeText(order.requester).includes(requester))
+      );
+    })
+    .map((order) => {
+      const rawCost = orderRawCost(order);
+      const bathCost = orderBathCost(order);
+      return {
+        id: order.id,
+        requestDate: order.requestDate,
+        requester: order.requester,
+        origin: order.origin,
+        status: order.status,
+        pieces: countPieces([order]),
+        rawCost,
+        bathCost,
+        totalCost: rawCost + bathCost,
+      };
+    })
+    .sort((a, b) => String(b.requestDate || "").localeCompare(String(a.requestDate || "")) || String(b.id || "").localeCompare(String(a.id || "")));
+}
+
+function orderRawCost(order) {
+  return (order.items || []).reduce((sum, item) => {
+    const unitCost = Number(item.unitCost || findPrice(item)?.unitCost || 0);
+    return sum + unitCost * Number(item.quantity || 0);
+  }, 0);
+}
+
+function orderBathCost(order) {
+  return (order.items || []).reduce((sum, item) => sum + Number(item.bathCost || 0) * Number(item.quantity || 0), 0);
 }
 
 function renderAccessLogs() {
@@ -1149,32 +1269,39 @@ function renderOrderHistory(historyRows) {
 
 function renderPrices() {
   elements.pricesBody.innerHTML = "";
-  if (!prices.length) {
-    elements.pricesBody.innerHTML = '<tr><td colspan="9">Nenhum preço cadastrado.</td></tr>';
+  const piecePrices = getUniquePiecePrices();
+  if (!piecePrices.length) {
+    elements.pricesBody.innerHTML = '<tr><td colspan="6">Nenhum preço cadastrado.</td></tr>';
     return;
   }
 
-  prices.forEach((price, index) => {
-    const preview = calculatePricePreview(price);
+  piecePrices.forEach((price) => {
     const row = document.createElement("tr");
     row.innerHTML = `
       <td>${price.model}</td>
       <td>${price.size}</td>
-      <td>${price.bath}</td>
       <td>${formatCostMoney(price.unitCost)}</td>
       <td>${Number(price.weight || 0).toLocaleString("pt-BR", { maximumFractionDigits: 3 })}</td>
       <td>${Number(price.goldThousandth || 0).toLocaleString("pt-BR", { maximumFractionDigits: 4 })}</td>
-      <td>${formatCostMoney(preview.bathCost)}</td>
-      <td>${formatCostMoney(preview.totalUnitCost)}</td>
-      <td><button class="action-button danger-action" type="button" title="Excluir" aria-label="Excluir preço" data-price-delete="${index}">
+      <td><button class="action-button danger-action" type="button" title="Excluir" aria-label="Excluir preço" data-price-delete="${price.model}||${price.size}">
         <svg viewBox="0 0 24 24" focusable="false">
           <path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm-3 6h12l-.8 11H6.8L6 9Zm4 2v7h2v-7h-2Zm4 0v7h2v-7h-2Z"/>
         </svg>
       </button></td>
     `;
-    row.querySelector("[data-price-delete]").addEventListener("click", () => deletePrice(index));
+    row.querySelector("[data-price-delete]").addEventListener("click", () => deletePiecePrice(price.model, price.size));
     elements.pricesBody.append(row);
   });
+}
+
+function getUniquePiecePrices() {
+  const grouped = new Map();
+  prices.forEach((price) => {
+    const key = `${price.model}||${price.size}`;
+    const current = grouped.get(key);
+    if (!current || price.bath === "Bruto") grouped.set(key, price);
+  });
+  return [...grouped.values()].sort((a, b) => `${a.model} ${a.size}`.localeCompare(`${b.model} ${b.size}`));
 }
 
 function getOrderHistoryRows() {
