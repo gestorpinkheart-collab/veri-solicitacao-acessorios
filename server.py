@@ -56,6 +56,12 @@ class RequestHandler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT), **kwargs)
 
+    def guess_type(self, path):
+        content_type = super().guess_type(path)
+        if path.endswith((".html", ".js", ".css")) and "charset=" not in content_type:
+            return f"{content_type}; charset=utf-8"
+        return content_type
+
     def do_GET(self):
         parsed = urlparse(self.path)
 
@@ -134,11 +140,11 @@ class RequestHandler(SimpleHTTPRequestHandler):
             try:
                 prices = self.read_json_body()
             except ValueError:
-                self.send_error(400, "JSON invÃ¡lido")
+                self.send_error(400, "JSON inválido")
                 return
 
             if not isinstance(prices, list):
-                self.send_error(400, "A lista de preÃ§os Ã© obrigatÃ³ria")
+                self.send_error(400, "A lista de preços é obrigatória")
                 return
 
             try:
@@ -152,11 +158,11 @@ class RequestHandler(SimpleHTTPRequestHandler):
             try:
                 settings = self.read_json_body()
             except ValueError:
-                self.send_error(400, "JSON invÃƒÂ¡lido")
+                self.send_error(400, "JSON inválido")
                 return
 
             if not isinstance(settings, dict):
-                self.send_error(400, "Os parÃƒÂ¢metros de custo sÃƒÂ£o obrigatÃƒÂ³rios")
+                self.send_error(400, "Os parâmetros de custo são obrigatórios")
                 return
 
             try:
@@ -173,7 +179,7 @@ class RequestHandler(SimpleHTTPRequestHandler):
             try:
                 credentials = self.read_json_body()
             except ValueError:
-                self.send_error(400, "JSON invÃ¡lido")
+                self.send_error(400, "JSON inválido")
                 return
 
             try:
@@ -182,7 +188,7 @@ class RequestHandler(SimpleHTTPRequestHandler):
                 self.send_json({"ok": False, "error": str(exc)}, status=503)
                 return
             if not user:
-                self.send_json({"ok": False, "error": "Login ou senha invÃ¡lidos."}, status=401)
+                self.send_json({"ok": False, "error": "Login ou senha inválidos."}, status=401)
                 return
             self.send_json({"ok": True, "user": user})
             return
@@ -191,7 +197,7 @@ class RequestHandler(SimpleHTTPRequestHandler):
             try:
                 payload = self.read_json_body()
             except ValueError:
-                self.send_error(400, "JSON invÃ¡lido")
+                self.send_error(400, "JSON inválido")
                 return
 
             try:
@@ -207,7 +213,7 @@ class RequestHandler(SimpleHTTPRequestHandler):
             try:
                 payload = self.read_json_body()
             except ValueError:
-                self.send_error(400, "JSON invÃƒÂ¡lido")
+                self.send_error(400, "JSON inválido")
                 return
 
             try:
@@ -446,7 +452,7 @@ def read_prices():
         try:
             return read_prices_supabase()
         except (HTTPError, URLError, ValueError) as exc:
-            raise storage_error("ler preÃ§os no Supabase", exc) from exc
+            raise storage_error("ler preços no Supabase", exc) from exc
 
     with LOCK:
         return read_local_prices_unlocked()
@@ -459,7 +465,7 @@ def write_prices(prices):
             write_prices_supabase(normalized)
             return
         except (HTTPError, URLError, ValueError) as exc:
-            raise storage_error("salvar preÃ§os no Supabase", exc) from exc
+            raise storage_error("salvar preços no Supabase", exc) from exc
 
     with LOCK:
         PRICES_FILE.write_text(dumps(normalized, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -505,17 +511,17 @@ def authenticate_user(credentials):
 
 def change_user_password(payload):
     if not isinstance(payload, dict):
-        raise ValueError("Dados invÃ¡lidos.")
+        raise ValueError("Dados inválidos.")
     login = str(payload.get("login", "")).strip()
     current_password = str(payload.get("currentPassword", ""))
     new_password = str(payload.get("newPassword", ""))
     if len(new_password) < 4:
         raise ValueError("A senha deve ter pelo menos 4 caracteres.")
     if new_password == "12345":
-        raise ValueError("Escolha uma senha diferente da provisÃ³ria.")
+        raise ValueError("Escolha uma senha diferente da provisória.")
     user = find_user(login)
     if not user or not verify_password(current_password, user):
-        raise ValueError("Senha atual invÃ¡lida.")
+        raise ValueError("Senha atual inválida.")
     salt = token_hex(8)
     updated = {
         **user,
@@ -529,7 +535,7 @@ def change_user_password(payload):
 
 def create_user(payload):
     if not isinstance(payload, dict):
-        raise ValueError("Dados invÃƒÂ¡lidos.")
+        raise ValueError("Dados inválidos.")
     login = str(payload.get("login", "")).strip()
     name = str(payload.get("name", "")).strip()
     origin = str(payload.get("origin", "")).strip()
@@ -538,15 +544,15 @@ def create_user(payload):
     role = str(payload.get("role", "collaborator")).strip() or "collaborator"
 
     if role != "collaborator":
-        raise ValueError("Perfil de cadastro invÃƒÂ¡lido.")
+        raise ValueError("Perfil de cadastro inválido.")
     if not login or not name or not origin or not phone or not password:
-        raise ValueError("Preencha todos os campos obrigatÃƒÂ³rios.")
+        raise ValueError("Preencha todos os campos obrigatórios.")
     if not is_valid_mobile(phone):
-        raise ValueError("Informe um telefone corporativo vÃƒÂ¡lido com DDD e 9 dÃƒÂ­gitos.")
+        raise ValueError("Informe um telefone corporativo válido com DDD e 9 dígitos.")
     if len(password) < 4:
         raise ValueError("A senha deve ter pelo menos 4 caracteres.")
     if find_user(login):
-        raise ValueError("Este usuÃƒÂ¡rio jÃƒÂ¡ existe. Escolha outro login.")
+        raise ValueError("Este usuário já existe. Escolha outro login.")
 
     salt = token_hex(8)
     user = {
@@ -574,7 +580,7 @@ def read_users():
         try:
             return read_users_supabase()
         except (HTTPError, URLError, ValueError) as exc:
-            raise storage_error("ler usuÃ¡rios no Supabase", exc) from exc
+            raise storage_error("ler usuários no Supabase", exc) from exc
     with LOCK:
         return read_local_users_unlocked()
 
@@ -585,7 +591,7 @@ def save_user(user):
             save_user_supabase(user)
             return
         except (HTTPError, URLError, ValueError) as exc:
-            raise storage_error("salvar usuÃ¡rio no Supabase", exc) from exc
+            raise storage_error("salvar usuário no Supabase", exc) from exc
     with LOCK:
         users = read_local_users_unlocked()
         users = [current for current in users if normalize(current.get("login")) != normalize(user.get("login"))]
@@ -603,7 +609,7 @@ def ensure_default_users():
             if normalize(default["login"]) not in existing:
                 save_user_without_seed(default_user_record(default))
     except (HTTPError, URLError, ValueError) as exc:
-        raise storage_error("preparar usuÃ¡rios no Supabase", exc) from exc
+        raise storage_error("preparar usuários no Supabase", exc) from exc
     ensure_default_users.done = True
 
 
