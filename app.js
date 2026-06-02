@@ -92,6 +92,7 @@ let users = loadUsers();
 let masterUsers = [];
 let masterCredential = null;
 let pendingUser = null;
+let isSubmittingOrder = false;
 let activeLoginMode = "common";
 let collaboratorAccessMode = "login";
 
@@ -132,6 +133,7 @@ const elements = {
   viewButtons: document.querySelectorAll("[data-view]"),
   views: document.querySelectorAll(".app-view"),
   form: document.querySelector("#orderForm"),
+  submitOrder: document.querySelector("#submitOrder"),
   editingId: document.querySelector("#editingId"),
   formTitle: document.querySelector("#formTitle"),
   orderNumberPreview: document.querySelector("#orderNumberPreview"),
@@ -473,6 +475,9 @@ async function handleInternalLogin() {
   let user = null;
   try {
     user = await authenticateInternalUser(login, password, activeLoginMode);
+    if (!user && activeLoginMode === "consultant") {
+      user = await authenticateInternalUser(login, password, "master");
+    }
   } catch (error) {
     showLoginError(error.message);
     return;
@@ -1067,56 +1072,65 @@ async function deletePiecePrice(model, size) {
 async function handleSubmit(event) {
   event.preventDefault();
   if (!currentSession?.name) return;
+  if (isSubmittingOrder) return;
+
+  isSubmittingOrder = true;
+  setSubmitButtonState(true);
+
   try {
     orders = await loadOrders();
-  } catch (error) {
-    alert(`N\u00e3o foi poss\u00edvel carregar os pedidos do banco.\n\n${error.message}`);
-    return;
-  }
 
-  const items = getItemsFromForm();
+    const items = getItemsFromForm();
 
-  if (!items.length) {
-    alert("Adicione pelo menos um item ao pedido.");
-    return;
-  }
+    if (!items.length) {
+      alert("Adicione pelo menos um item ao pedido.");
+      return;
+    }
 
-  await loadCostData();
+    await loadCostData();
 
-  const existingId = elements.editingId.value;
-  const requester = isInternalUser() ? elements.requester.value.trim() : currentSession.name;
-  const existingOrder = existingId ? orders.find((item) => item.id === existingId) : null;
-  const pricedItems = enrichItemsForOrder(items, existingOrder);
-  const order = {
-    requestDate: existingOrder?.requestDate || todayIso,
-    requester,
-    phone: currentSession.role === "collaborator" ? currentSession.phone : existingOrder?.phone || "",
-    origin: elements.origin.value,
-    priority: elements.priority.value,
-    dueDate: "",
-    status: isInternalUser() ? elements.status.value : statuses[0],
-    notes: elements.notes.value.trim(),
-    items: pricedItems,
-    updatedBy: currentSession.name,
-    updatedByRole: currentSession.role,
-  };
+    const existingId = elements.editingId.value;
+    const requester = isInternalUser() ? elements.requester.value.trim() : currentSession.name;
+    const existingOrder = existingId ? orders.find((item) => item.id === existingId) : null;
+    const pricedItems = enrichItemsForOrder(items, existingOrder);
+    const order = {
+      requestDate: existingOrder?.requestDate || todayIso,
+      requester,
+      phone: currentSession.role === "collaborator" ? currentSession.phone : existingOrder?.phone || "",
+      origin: elements.origin.value,
+      priority: elements.priority.value,
+      dueDate: "",
+      status: isInternalUser() ? elements.status.value : statuses[0],
+      notes: elements.notes.value.trim(),
+      items: pricedItems,
+      updatedBy: currentSession.name,
+      updatedByRole: currentSession.role,
+    };
 
-  let savedOrder;
-  try {
-    savedOrder = existingId ? await patchOrder(existingId, { ...order, id: existingId }) : await createOrder(order);
-  } catch (error) {
-    alert(`N\u00e3o foi poss\u00edvel salvar o pedido no banco.\n\n${error.message}`);
-    return;
-  }
-  if (currentSession.role === "collaborator") {
-    alert(`Solicita\u00e7\u00e3o ${savedOrder.id} enviada com sucesso.`);
+    const savedOrder = existingId ? await patchOrder(existingId, { ...order, id: existingId }) : await createOrder(order);
+
+    if (currentSession.role === "collaborator") {
+      alert(`Pedido ${savedOrder.id} finalizado com sucesso.`);
+      resetForm();
+      await refreshOrders();
+      return;
+    }
+
     resetForm();
-    await refreshOrders();
-    return;
+    showView("managementView");
+    render();
+  } catch (error) {
+    alert(`N\u00e3o foi poss\u00edvel finalizar o pedido.\n\n${error.message}`);
+  } finally {
+    isSubmittingOrder = false;
+    setSubmitButtonState(false);
   }
-  resetForm();
-  showView("managementView");
-  render();
+}
+
+function setSubmitButtonState(isBusy) {
+  if (!elements.submitOrder) return;
+  elements.submitOrder.disabled = isBusy;
+  elements.submitOrder.textContent = isBusy ? "Finalizando..." : "Finalizar pedido";
 }
 
 function getItemsFromForm() {
@@ -1871,6 +1885,7 @@ function renderCollaboratorOrders() {
     const displayStatus = normalizeStatus(order.status);
     const totalPieces = countPieces([order]);
     const priorityClass = order.priority === "Urgente" ? "urgent" : "";
+    const canEdit = canManageOrder(order);
     card.innerHTML = `
       <div class="order-top">
         <strong>${order.id}</strong>
@@ -1890,13 +1905,21 @@ function renderCollaboratorOrders() {
       </ul>
       <div class="order-footer collaborator-order-footer">
         <span class="status-note">${statusHelperText(displayStatus)}</span>
-        <button class="action-button clone-action" type="button" data-clone="${order.id}" title="Clonar pedido" aria-label="Clonar pedido">
-          <svg viewBox="0 0 24 24" focusable="false">
-            <path d="M8 7V4c0-1.1.9-2 2-2h8c1.1 0 2 .9 2 2v10c0 1.1-.9 2-2 2h-3v3c0 1.1-.9 2-2 2H5c-1.1 0-2-.9-2-2V9c0-1.1.9-2 2-2h3Zm2 0h3c1.1 0 2 .9 2 2v5h3V4h-8v3ZM5 9v10h8V9H5Z"/>
-          </svg>
-        </button>
+        <div class="order-actions">
+          ${canEdit ? `<button class="action-button" type="button" data-edit="${order.id}" title="Editar pedido" aria-label="Editar pedido">
+            <svg viewBox="0 0 24 24" focusable="false">
+              <path d="m4 16.6-.7 4.1 4.1-.7L18.8 8.6l-3.4-3.4L4 16.6Zm16.1-9.3 1-1a2 2 0 0 0 0-2.8l-.6-.6a2 2 0 0 0-2.8 0l-1 1 3.4 3.4Z"/>
+            </svg>
+          </button>` : ""}
+          <button class="action-button clone-action" type="button" data-clone="${order.id}" title="Clonar pedido" aria-label="Clonar pedido">
+            <svg viewBox="0 0 24 24" focusable="false">
+              <path d="M8 7V4c0-1.1.9-2 2-2h8c1.1 0 2 .9 2 2v10c0 1.1-.9 2-2 2h-3v3c0 1.1-.9 2-2 2H5c-1.1 0-2-.9-2-2V9c0-1.1.9-2 2-2h3Zm2 0h3c1.1 0 2 .9 2 2v5h3V4h-8v3ZM5 9v10h8V9H5Z"/>
+            </svg>
+          </button>
+        </div>
       </div>
     `;
+    card.querySelector("[data-edit]")?.addEventListener("click", () => editOrder(order.id));
     card.querySelector("[data-clone]").addEventListener("click", () => cloneOrder(order.id));
     elements.collaboratorOrdersList.append(card);
   });
@@ -1931,7 +1954,11 @@ function cloneOrder(id) {
 }
 
 function canManageOrder(order) {
-  return isInternalUser() || normalizeText(order.requester) === normalizeText(currentSession?.name || "");
+  if (isInternalUser()) return true;
+  return (
+    normalizeText(order.requester) === normalizeText(currentSession?.name || "") &&
+    normalizeStatus(order.status) === "Pedido Recebido"
+  );
 }
 
 function isInternalUser() {
