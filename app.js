@@ -197,6 +197,10 @@ const elements = {
   masterCostTotal: document.querySelector("#masterCostTotal"),
   masterCostBody: document.querySelector("#masterCostBody"),
   refreshUsers: document.querySelector("#refreshUsers"),
+  managementUserForm: document.querySelector("#managementUserForm"),
+  managementUserName: document.querySelector("#managementUserName"),
+  managementUserSector: document.querySelector("#managementUserSector"),
+  managementUserPassword: document.querySelector("#managementUserPassword"),
   masterUsersBody: document.querySelector("#masterUsersBody"),
   accessLogsBody: document.querySelector("#accessLogsBody"),
   orderHistoryBody: document.querySelector("#orderHistoryBody"),
@@ -259,6 +263,7 @@ async function init() {
   elements.refreshMyOrders?.addEventListener("click", refreshOrders);
   elements.refreshMasterData?.addEventListener("click", loadMasterData);
   elements.refreshUsers?.addEventListener("click", loadMasterUsers);
+  elements.managementUserForm?.addEventListener("submit", handleManagementUserSubmit);
   elements.masterTabButtons.forEach((button) => {
     button.addEventListener("click", () => showMasterTab(button.dataset.masterTab));
   });
@@ -1541,6 +1546,7 @@ function accessEventLabel(eventType) {
     login: "Login",
     alerta_nome_celular: "Nome diferente no celular",
     senha_provisoria: "Senha provis\u00f3ria",
+    usuario_gestao_criado: "Usu\u00e1rio Gest\u00e3o criado",
   };
   return labels[eventType] || eventType || "Login";
 }
@@ -1628,6 +1634,46 @@ async function resetUserPassword(login) {
     masterUsers = masterUsers.map((item) => (item.login === payload.user.login ? payload.user : item));
     renderMasterUsers();
     alert("Senha provis\u00f3ria definida. No pr\u00f3ximo acesso, o usu\u00e1rio ser\u00e1 direcionado para trocar a senha.");
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
+async function handleManagementUserSubmit(event) {
+  event.preventDefault();
+  if (!isMasterUser() || !masterCredential) return;
+
+  const name = elements.managementUserName.value.trim();
+  const sector = elements.managementUserSector.value.trim();
+  const password = elements.managementUserPassword.value.trim();
+
+  if (!name || !sector || !password) {
+    alert("Preencha nome, setor e senha padr\u00e3o.");
+    return;
+  }
+
+  if (password.length < 4) {
+    alert("A senha padr\u00e3o deve ter pelo menos 4 caracteres.");
+    return;
+  }
+
+  try {
+    const response = await fetch("/api/users/management", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        master: masterCredential,
+        name,
+        sector,
+        password,
+      }),
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "N\u00e3o foi poss\u00edvel criar o usu\u00e1rio.");
+    elements.managementUserForm.reset();
+    masterUsers = [payload.user, ...masterUsers.filter((item) => item.login !== payload.user.login)];
+    renderMasterUsers();
+    alert("Usu\u00e1rio de Gest\u00e3o criado. No primeiro acesso, ele dever\u00e1 trocar a senha.");
   } catch (error) {
     alert(error.message);
   }

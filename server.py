@@ -241,6 +241,22 @@ class RequestHandler(SimpleHTTPRequestHandler):
                 self.send_json({"ok": False, "error": str(exc)}, status=503)
             return
 
+        if self.path == "/api/users/management":
+            try:
+                payload = self.read_json_body()
+            except ValueError:
+                self.send_error(400, "JSON invalido")
+                return
+
+            try:
+                user = create_management_user(payload)
+                self.send_json({"ok": True, "user": user}, status=201)
+            except ValueError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=400)
+            except StorageError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=503)
+            return
+
         if self.path == "/api/users":
             try:
                 payload = self.read_json_body()
@@ -614,6 +630,47 @@ def admin_reset_user_password(payload):
         "details": {"targetLogin": login},
     })
     return public_user(updated)
+
+
+def create_management_user(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("Dados invalidos.")
+    master_user = authenticate_master(payload)
+    name = str(payload.get("name", "")).strip()
+    sector = str(payload.get("sector", "")).strip()
+    password = str(payload.get("password", ""))
+    login = str(payload.get("login", "")).strip() or name
+
+    if not name or not sector or not password:
+        raise ValueError("Preencha nome, setor e senha padrao.")
+    if len(password) < 4:
+        raise ValueError("A senha padrao deve ter pelo menos 4 caracteres.")
+    if find_user(login):
+        raise ValueError("Ja existe usuario com este nome/login. Use outro nome para o cadastro.")
+
+    salt = token_hex(8)
+    now = datetime.now().isoformat()
+    user = {
+        "login": login,
+        "name": name,
+        "role": "consultant",
+        "phone": "",
+        "origin": sector,
+        "passwordHash": hash_password(password, salt),
+        "passwordSalt": salt,
+        "mustChangePassword": True,
+        "createdAt": now,
+        "updatedAt": now,
+    }
+    save_user(user)
+    write_access_log({
+        "userName": master_user.get("name", "Master"),
+        "login": master_user.get("login", ""),
+        "role": "master",
+        "eventType": "usuario_gestao_criado",
+        "details": {"targetLogin": login, "sector": sector},
+    })
+    return public_user(user)
 
 
 def create_user(payload):

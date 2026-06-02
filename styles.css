@@ -1175,6 +1175,15 @@ select:disabled {
   align-self: end;
 }
 
+.compact-user-form {
+  align-items: end;
+  grid-template-columns: minmax(180px, 1fr) minmax(180px, 1fr) minmax(180px, 1fr) auto;
+  padding: 14px;
+  border: 1px solid rgba(146, 172, 160, 0.24);
+  border-radius: 10px;
+  background: rgba(146, 172, 160, 0.08);
+}
+
 .compact-table {
   max-height: 380px;
   border: 1px solid var(--line);
