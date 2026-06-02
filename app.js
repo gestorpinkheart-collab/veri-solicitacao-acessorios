@@ -1,4 +1,4 @@
-const STORAGE_KEY = "factoryPartOrders";
+﻿const STORAGE_KEY = "factoryPartOrders";
 const SESSION_KEY = "factoryPartOrdersSession";
 const USERS_KEY = "factoryPartOrdersUsersV2";
 const API_ORDERS_URL = "/api/orders";
@@ -11,23 +11,23 @@ const defaultUsers = [
 ];
 
 const statuses = [
-  "Pedido Recebido",
-  "Em separação",
+  "Pedido Enviado",
+  "Em separaÃ§Ã£o",
   "Entregue",
 ];
 
 const origins = [
-  "Escritório VQF",
-  "Loja Cambuí Campinas",
+  "EscritÃ³rio VQF",
+  "Loja CambuÃ­ Campinas",
   "Loja Dom Pedro",
   "Loja Iguatemi Campinas",
   "Loja Iguatemi Sorocaba",
   "Showroom Barueri",
   "Showroom Campinas",
   "Showroom Indaiatuba",
-  "Showroom São Paulo",
+  "Showroom SÃ£o Paulo",
   "Showroom Sorocaba",
-  "Showroom Sumaré",
+  "Showroom SumarÃ©",
   "Site",
   "Veri Em Casa",
 ];
@@ -35,7 +35,7 @@ const origins = [
 const partSizes = {
   Argolinha: ["3.0 x 0.60", "3.5 x 0.70", "3.5 x 0.80", "4.2 x 0.70", "4.2 x 0.80", "5.0 x 0.80"],
   "Extensor Losango": ["3 cm", "5 cm", "7 cm", "10 cm"],
-  "Extensor balãozinho": ["3 cm", "5 cm", "7 cm", "10 cm"],
+  "Extensor balÃ£ozinho": ["3 cm", "5 cm", "7 cm", "10 cm"],
   "Extensor Vqzinha": ["2,5 cm", "4,5 cm"],
   Timbre: ["VERI"],
   "Fecho lagosta": ["9 mm", "10 mm", "11 mm", "12 mm"],
@@ -46,7 +46,7 @@ const partSizes = {
   Tarraxa: ["P", "M", "G", "BABY"],
 };
 
-const baths = ["Ouro", "Ródio"];
+const baths = ["Ouro", "RÃ³dio"];
 
 const sampleOrders = [
   {
@@ -57,12 +57,12 @@ const sampleOrders = [
     origin: "Showroom Campinas",
     priority: "Urgente",
     dueDate: "",
-    status: "Em separação",
+    status: "Em separaÃ§Ã£o",
     notes: "Separar banho com prioridade para vitrine.",
     attachmentName: "",
     items: [
       { model: "Argolinha", size: "3.5 x 0.70", bath: "Ouro", quantity: 10 },
-      { model: "Extensor Losango", size: "5 cm", bath: "Ródio", quantity: 5 },
+      { model: "Extensor Losango", size: "5 cm", bath: "RÃ³dio", quantity: 5 },
     ],
   },
   {
@@ -73,7 +73,7 @@ const sampleOrders = [
     origin: "Loja Dom Pedro",
     priority: "Normal",
     dueDate: "",
-    status: "Pedido Recebido",
+    status: "Pedido Enviado",
     notes: "",
     attachmentName: "",
     items: [{ model: "Fecho lagosta", size: "10 mm", bath: "Ouro", quantity: 12 }],
@@ -350,7 +350,7 @@ async function handleLogin(event) {
   }
 
   if (!isValidBrazilMobile(phone)) {
-    showLoginError("Informe um celular válido com DDD e 9 dígitos. Exemplo: (11) 99999-9999. Esse número será usado para avisos do WhatsApp.");
+    showLoginError("Informe um celular vÃ¡lido com DDD e 9 dÃ­gitos. Exemplo: (11) 99999-9999. Esse nÃºmero serÃ¡ usado para avisos do WhatsApp.");
     return;
   }
 
@@ -358,11 +358,11 @@ async function handleLogin(event) {
   const differentNames = knownNames.filter((knownName) => normalizeText(knownName) !== normalizeText(name));
   if (differentNames.length) {
     const previousNames = differentNames.slice(0, 3).join(", ");
-    alert(`Atenção: este celular já possui histórico no sistema vinculado a: ${previousNames}.\n\nPara manter a consulta dos pedidos e os avisos por WhatsApp corretos, use sempre este mesmo número quando for você realizando a solicitação.`);
+    alert(`AtenÃ§Ã£o: este celular jÃ¡ possui histÃ³rico no sistema vinculado a: ${previousNames}.\n\nPara manter a consulta dos pedidos e os avisos por WhatsApp corretos, use sempre este mesmo nÃºmero quando for vocÃª realizando a solicitaÃ§Ã£o.`);
     await logAccess(
       { name, phone, role: "collaborator", login: name },
       "alerta_nome_celular",
-      { previousNames: differentNames, message: "Celular já utilizado com outro nome de colaborador." }
+      { previousNames: differentNames, message: "Celular jÃ¡ utilizado com outro nome de colaborador." }
     );
   }
 
@@ -374,7 +374,7 @@ async function handleCollaboratorLogin() {
   const password = elements.collaboratorPassword.value;
 
   if (!login || !password) {
-    showLoginError("Informe usuário e senha para entrar.");
+    showLoginError("Informe usuÃ¡rio e senha para entrar.");
     return;
   }
 
@@ -387,7 +387,7 @@ async function handleCollaboratorLogin() {
   }
 
   if (!user) {
-    showLoginError("Usuário ou senha inválidos.");
+    showLoginError("UsuÃ¡rio ou senha invÃ¡lidos.");
     return;
   }
 
@@ -417,7 +417,7 @@ async function handleCollaboratorRegistration() {
     return;
   }
   if (!isValidBrazilMobile(phone)) {
-    showLoginError("Informe um telefone corporativo válido com DDD e 9 dígitos. Exemplo: (11) 99999-9999.");
+    showLoginError("Informe um telefone corporativo vÃ¡lido com DDD e 9 dÃ­gitos. Exemplo: (11) 99999-9999.");
     return;
   }
   if (password.length < 4) {
@@ -425,7 +425,7 @@ async function handleCollaboratorRegistration() {
     return;
   }
   if (password !== confirmPassword) {
-    showLoginError("A confirmação de senha não confere.");
+    showLoginError("A confirmaÃ§Ã£o de senha nÃ£o confere.");
     return;
   }
 
@@ -437,7 +437,7 @@ async function handleCollaboratorRegistration() {
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      showLoginError(payload.error || "Não foi possível criar o acesso.");
+      showLoginError(payload.error || "NÃ£o foi possÃ­vel criar o acesso.");
       return;
     }
     setCollaboratorAccessMode("login");
@@ -451,7 +451,7 @@ async function handleCollaboratorRegistration() {
     elements.registerConfirmPassword.value = "";
     showLoginError("Acesso criado. Digite sua senha para entrar.");
   } catch (error) {
-    showLoginError(error.message || "Não foi possível criar o acesso.");
+    showLoginError(error.message || "NÃ£o foi possÃ­vel criar o acesso.");
   }
 }
 
@@ -467,7 +467,7 @@ async function handleInternalLogin() {
   }
 
   if (!user) {
-    showLoginError("Login ou senha inválidos.");
+    showLoginError("Login ou senha invÃ¡lidos.");
     return;
   }
 
@@ -560,12 +560,12 @@ async function handlePasswordChange(event) {
   if (!pendingUser) return;
 
   if (password !== confirmation) {
-    elements.passwordError.textContent = "As senhas não conferem.";
+    elements.passwordError.textContent = "As senhas nÃ£o conferem.";
     return;
   }
 
   if (password === "12345") {
-    elements.passwordError.textContent = "Escolha uma senha diferente da provisória.";
+    elements.passwordError.textContent = "Escolha uma senha diferente da provisÃ³ria.";
     return;
   }
 
@@ -581,7 +581,7 @@ async function handlePasswordChange(event) {
     });
     const payload = await response.json();
     if (!response.ok) {
-      elements.passwordError.textContent = payload.error || "Não foi possível trocar a senha.";
+      elements.passwordError.textContent = payload.error || "NÃ£o foi possÃ­vel trocar a senha.";
       return;
     }
     pendingUser = null;
@@ -790,7 +790,7 @@ async function createOrder(order) {
 
   if (!apiAvailable) {
     if (location.protocol.startsWith("http")) {
-      throw new Error("API indisponível. Confira a conexão do Render com o Supabase.");
+      throw new Error("API indisponÃ­vel. Confira a conexÃ£o do Render com o Supabase.");
     }
     orders = [fallbackOrder, ...orders];
     localStorage.setItem(STORAGE_KEY, JSON.stringify(orders));
@@ -827,7 +827,7 @@ async function patchOrder(id, updates) {
 
   if (!apiAvailable) {
     if (location.protocol.startsWith("http")) {
-      throw new Error("API indisponível. Confira a conexão do Render com o Supabase.");
+      throw new Error("API indisponÃ­vel. Confira a conexÃ£o do Render com o Supabase.");
     }
     return orders.find((order) => order.id === id);
   }
@@ -855,7 +855,7 @@ async function removeOrder(id) {
 
   if (!apiAvailable) {
     if (location.protocol.startsWith("http")) {
-      throw new Error("API indisponível. Confira a conexão do Render com o Supabase.");
+      throw new Error("API indisponÃ­vel. Confira a conexÃ£o do Render com o Supabase.");
     }
     return;
   }
@@ -955,7 +955,7 @@ async function handleCostSettingsSubmit(event) {
     await saveCostSettings();
     await loadMasterData();
   } catch (error) {
-    alert(`Não foi possível salvar os parâmetros.\n\n${error.message}`);
+    alert(`NÃ£o foi possÃ­vel salvar os parÃ¢metros.\n\n${error.message}`);
   }
 }
 
@@ -985,7 +985,7 @@ async function handlePriceSubmit(event) {
     populatePriceSizeOptions();
     await loadMasterData();
   } catch (error) {
-    alert(`Não foi possível salvar o preço.\n\n${error.message}`);
+    alert(`NÃ£o foi possÃ­vel salvar o preÃ§o.\n\n${error.message}`);
   }
 }
 
@@ -996,7 +996,7 @@ async function deletePrice(index) {
     await savePrices();
     renderMasterPanel();
   } catch (error) {
-    alert(`Não foi possível excluir o preço.\n\n${error.message}`);
+    alert(`NÃ£o foi possÃ­vel excluir o preÃ§o.\n\n${error.message}`);
   }
 }
 
@@ -1007,7 +1007,7 @@ async function deletePiecePrice(model, size) {
     await savePrices();
     renderMasterPanel();
   } catch (error) {
-    alert(`Não foi possível excluir o preço.\n\n${error.message}`);
+    alert(`NÃ£o foi possÃ­vel excluir o preÃ§o.\n\n${error.message}`);
   }
 }
 
@@ -1017,7 +1017,7 @@ async function handleSubmit(event) {
   try {
     orders = await loadOrders();
   } catch (error) {
-    alert(`Não foi possível carregar os pedidos do banco.\n\n${error.message}`);
+    alert(`NÃ£o foi possÃ­vel carregar os pedidos do banco.\n\n${error.message}`);
     return;
   }
 
@@ -1052,11 +1052,11 @@ async function handleSubmit(event) {
   try {
     savedOrder = existingId ? await patchOrder(existingId, { ...order, id: existingId }) : await createOrder(order);
   } catch (error) {
-    alert(`Não foi possível salvar o pedido no banco.\n\n${error.message}`);
+    alert(`NÃ£o foi possÃ­vel salvar o pedido no banco.\n\n${error.message}`);
     return;
   }
   if (currentSession.role === "collaborator") {
-    alert(`Solicitação ${savedOrder.id} enviada com sucesso.`);
+    alert(`SolicitaÃ§Ã£o ${savedOrder.id} enviada com sucesso.`);
     resetForm();
     await refreshOrders();
     return;
@@ -1149,7 +1149,7 @@ function findPrice(item) {
 function calculateBathCost({ bath, weight, goldThousandth }) {
   const normalizedBath = normalizeBath(bath);
   const pieceWeight = Number(weight || 0);
-  if (normalizedBath === "Ródio") {
+  if (normalizedBath === "RÃ³dio") {
     return (Number(costSettings.rhodiumFactor || 0) * Number(costSettings.rhodiumValue || 0) / 1000) * pieceWeight;
   }
   if (normalizedBath === "Ouro") {
@@ -1270,8 +1270,8 @@ function populateSizeOptions(row, model, selectedSize = "") {
 function resetForm() {
   elements.form.reset();
   elements.editingId.value = "";
-  elements.formTitle.textContent = "Carrinho da solicitação";
-  elements.orderNumberPreview.textContent = "Novo pedido a cada envio";
+  elements.formTitle.textContent = "Carrinho da solicitaÃ§Ã£o";
+  if (elements.orderNumberPreview) elements.orderNumberPreview.textContent = "";
   elements.requester.value = isInternalUser() ? "" : currentSession?.name || "";
   elements.requester.readOnly = !isInternalUser();
   if (!isInternalUser() && currentSession?.origin) elements.origin.value = currentSession.origin;
@@ -1288,7 +1288,7 @@ function editOrder(id) {
 
   elements.editingId.value = order.id;
   elements.formTitle.textContent = "Editar pedido";
-  elements.orderNumberPreview.textContent = order.id;
+  if (elements.orderNumberPreview) elements.orderNumberPreview.textContent = order.id;
   elements.requester.value = order.requester;
   if (order.origin && !origins.includes(order.origin)) {
     elements.origin.append(new Option(order.origin, order.origin));
@@ -1309,7 +1309,7 @@ async function deleteOrder(id) {
   try {
     await removeOrder(id);
   } catch (error) {
-    alert(`Não foi possível excluir o pedido no banco.\n\n${error.message}`);
+    alert(`NÃ£o foi possÃ­vel excluir o pedido no banco.\n\n${error.message}`);
   }
   render();
 }
@@ -1319,7 +1319,7 @@ async function updateStatus(id, status) {
   try {
     await patchOrder(id, { status, updatedBy: currentSession.name, updatedByRole: currentSession.role });
   } catch (error) {
-    alert(`Não foi possível alterar o status no banco.\n\n${error.message}`);
+    alert(`NÃ£o foi possÃ­vel alterar o status no banco.\n\n${error.message}`);
   }
   render();
 }
@@ -1442,7 +1442,7 @@ function renderAccessLogs() {
     const row = document.createElement("tr");
     row.innerHTML = `
       <td>${formatDateTime(log.createdAt)}</td>
-      <td>${log.userName || log.login || "Sem usuário"}</td>
+      <td>${log.userName || log.login || "Sem usuÃ¡rio"}</td>
       <td>${roleLabel(log.role)}</td>
       <td>${accessEventLabel(log.eventType)}</td>
       <td>${log.origin || ""}</td>
@@ -1462,7 +1462,7 @@ function accessEventLabel(eventType) {
 function renderOrderHistory(historyRows) {
   elements.orderHistoryBody.innerHTML = "";
   if (!historyRows.length) {
-    elements.orderHistoryBody.innerHTML = '<tr><td colspan="5">Nenhuma movimentação registrada.</td></tr>';
+    elements.orderHistoryBody.innerHTML = '<tr><td colspan="5">Nenhuma movimentaÃ§Ã£o registrada.</td></tr>';
     return;
   }
 
@@ -1483,7 +1483,7 @@ function renderPrices() {
   elements.pricesBody.innerHTML = "";
   const piecePrices = getUniquePiecePrices();
   if (!piecePrices.length) {
-    elements.pricesBody.innerHTML = '<tr><td colspan="6">Nenhum preço cadastrado.</td></tr>';
+    elements.pricesBody.innerHTML = '<tr><td colspan="6">Nenhum preÃ§o cadastrado.</td></tr>';
     return;
   }
 
@@ -1495,7 +1495,7 @@ function renderPrices() {
       <td>${formatCostMoney(price.unitCost)}</td>
       <td>${Number(price.weight || 0).toLocaleString("pt-BR", { maximumFractionDigits: 3 })}</td>
       <td>${Number(price.goldThousandth || 0).toLocaleString("pt-BR", { maximumFractionDigits: 4 })}</td>
-      <td><button class="action-button danger-action" type="button" title="Excluir" aria-label="Excluir preço" data-price-delete="${price.model}||${price.size}">
+      <td><button class="action-button danger-action" type="button" title="Excluir" aria-label="Excluir preÃ§o" data-price-delete="${price.model}||${price.size}">
         <svg viewBox="0 0 24 24" focusable="false">
           <path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm-3 6h12l-.8 11H6.8L6 9Zm4 2v7h2v-7h-2Zm4 0v7h2v-7h-2Z"/>
         </svg>
@@ -1580,8 +1580,8 @@ function getDashboardOrders() {
 function renderMetrics() {
   const visibleOrders = getDashboardOrders();
   const urgent = visibleOrders.filter((order) => order.priority === "Urgente").length;
-  const newOpen = visibleOrders.filter((order) => order.status === "Pedido Recebido").length;
-  const progress = visibleOrders.filter((order) => order.status === "Em separação").length;
+  const newOpen = visibleOrders.filter((order) => order.status === "Pedido Enviado").length;
+  const progress = visibleOrders.filter((order) => order.status === "Em separaÃ§Ã£o").length;
   const delivered = visibleOrders.filter((order) => order.status === "Entregue").length;
   elements.metricTotal.textContent = newOpen;
   elements.metricUrgent.textContent = urgent;
@@ -1591,8 +1591,8 @@ function renderMetrics() {
 
 function renderStatusWidgets() {
   const visibleOrders = getVisibleOrders();
-  elements.widgetReceived.textContent = visibleOrders.filter((order) => order.status === "Pedido Recebido").length;
-  elements.widgetProgress.textContent = visibleOrders.filter((order) => order.status === "Em separação").length;
+  elements.widgetReceived.textContent = visibleOrders.filter((order) => order.status === "Pedido Enviado").length;
+  elements.widgetProgress.textContent = visibleOrders.filter((order) => order.status === "Em separaÃ§Ã£o").length;
   elements.widgetDelivered.textContent = visibleOrders.filter((order) => order.status === "Entregue").length;
 }
 
@@ -1691,11 +1691,11 @@ function renderOrders() {
         <span>${order.requester}</span>
         <span>${formatPhone(order.phone) || "Sem celular"}</span>
         <span>${order.origin}</span>
-        <span>${totalPieces} peças</span>
+        <span>${totalPieces} peÃ§as</span>
         <span>${order.items.length} itens</span>
       </div>
       <ul class="order-items">
-        ${order.items.map((item) => `<li>${item.quantity}x ${item.model} · ${item.size} · ${item.bath}</li>`).join("")}
+        ${order.items.map((item) => `<li>${item.quantity}x ${item.model} Â· ${item.size} Â· ${item.bath}</li>`).join("")}
       </ul>
       <div class="order-footer">
         <label>
@@ -1704,7 +1704,7 @@ function renderOrders() {
             ${statuses.map((status) => `<option ${status === order.status ? "selected" : ""}>${status}</option>`).join("")}
           </select>
         </label>
-        <div class="order-actions" aria-label="Ações do pedido">
+        <div class="order-actions" aria-label="AÃ§Ãµes do pedido">
           ${canManage ? `<button class="action-button" type="button" data-edit="${order.id}" title="Editar" aria-label="Editar pedido">
             <svg viewBox="0 0 24 24" focusable="false">
               <path d="m4 16.6-.7 4.1 4.1-.7L18.8 8.6l-3.4-3.4L4 16.6Zm16.1-9.3 1-1a2 2 0 0 0 0-2.8l-.6-.6a2 2 0 0 0-2.8 0l-1 1 3.4 3.4Z"/>
@@ -1757,11 +1757,11 @@ function renderCollaboratorOrders() {
       <div class="order-meta">
         <span>${formatDate(order.requestDate)}</span>
         <span>${order.origin}</span>
-        <span>${totalPieces} peças</span>
+        <span>${totalPieces} peÃ§as</span>
         <span>${order.items.length} itens</span>
       </div>
       <ul class="order-items">
-        ${order.items.map((item) => `<li>${item.quantity}x ${item.model} · ${item.size} · ${item.bath}</li>`).join("")}
+        ${order.items.map((item) => `<li>${item.quantity}x ${item.model} Â· ${item.size} Â· ${item.bath}</li>`).join("")}
       </ul>
       <div class="order-footer collaborator-order-footer">
         <span class="status-note">${statusHelperText(order.status)}</span>
@@ -1779,8 +1779,8 @@ function renderCollaboratorOrders() {
 
 function statusHelperText(status) {
   const messages = {
-    "Pedido Recebido": "Recebido pela fábrica",
-    "Em separação": "Em andamento",
+    "Pedido Enviado": "Solicitado à fábrica",
+    "Em separaÃ§Ã£o": "Em andamento",
     Entregue: "Pedido finalizado",
   };
   return messages[status] || status || "";
@@ -1792,7 +1792,7 @@ function cloneOrder(id) {
 
   elements.editingId.value = "";
   elements.formTitle.textContent = "Clonar pedido";
-  elements.orderNumberPreview.textContent = "Novo pedido a cada envio";
+  if (elements.orderNumberPreview) elements.orderNumberPreview.textContent = "";
   elements.requester.value = currentSession?.name || order.requester || "";
   elements.origin.value = order.origin || "";
   elements.priority.value = order.priority || "Normal";
@@ -1824,10 +1824,10 @@ function buildStatusMessage(order) {
     .map((item) => `${item.quantity}x ${item.model} ${item.size} ${item.bath}`)
     .join("; ");
   const extraItems = order.items.length > 4 ? `; +${order.items.length - 4} item(ns)` : "";
-  const base = `Olá, ${order.requester}. Aqui é a equipe VERI.\n\nPedido: ${order.id}\nLoja/Setor: ${order.origin}\nItens: ${order.items.length}\nPeças: ${totalPieces}\nResumo: ${itemSummary}${extraItems}`;
+  const base = `OlÃ¡, ${order.requester}. Aqui Ã© a equipe VERI.\n\nPedido: ${order.id}\nLoja/Setor: ${order.origin}\nItens: ${order.items.length}\nPeÃ§as: ${totalPieces}\nResumo: ${itemSummary}${extraItems}`;
   const statusMessages = {
-    "Pedido Recebido": `${base}\n\nStatus: Pedido recebido com sucesso.\nA fábrica já recebeu sua solicitação e fará a conferência para iniciar a separação.\n\nObrigado por acompanhar pelo sistema VERI.`,
-    "Em separação": `${base}\n\nStatus: Em separação.\nSeu pedido está em andamento na fábrica. Avisaremos assim que a etapa for concluída.\n\nEquipe VERI.`,
+    "Pedido Enviado": `${base}\n\nStatus: Pedido enviado com sucesso.\nSua solicitação foi registrada para a fábrica. A próxima atualização será feita pela Gestão de Pedidos.\n\nObrigado por acompanhar pelo sistema VERI.`,
+    "Em separaÃ§Ã£o": `${base}\n\nStatus: Em separaÃ§Ã£o.\nSeu pedido estÃ¡ em andamento na fÃ¡brica. Avisaremos assim que a etapa for concluÃ­da.\n\nEquipe VERI.`,
     Entregue: `${base}\n\nStatus: Entregue.\nSeu pedido foi finalizado e entregue. Obrigado por utilizar o sistema VERI.`,
   };
 
@@ -1967,7 +1967,7 @@ function nextOrderId() {
 function exportCsv() {
   if (!isInternalUser()) return;
   const rows = [
-    ["Pedido", "Data", "Solicitante", "Celular", "Origem", "Prioridade", "Status", "Modelo", "Tamanho", "Banho", "Quantidade", "Observações"],
+    ["Pedido", "Data", "Solicitante", "Celular", "Origem", "Prioridade", "Status", "Modelo", "Tamanho", "Banho", "Quantidade", "ObservaÃ§Ãµes"],
   ];
 
   getReportOrders().forEach((order) => {
@@ -2102,7 +2102,7 @@ function normalizeCostSettings(settings = {}) {
 function roleLabel(role) {
   const labels = {
     collaborator: "Colaborador",
-    consultant: "Gestão de Pedidos",
+    consultant: "GestÃ£o de Pedidos",
     master: "Master",
   };
   return labels[role] || role || "";
@@ -2122,8 +2122,9 @@ function normalizeOrders(orderList) {
 
 function normalizeStatus(status) {
   if (status === "Entregue") return "Entregue";
-  if (status === "Pedido Recebido") return "Pedido Recebido";
-  return "Em separação";
+  if (status === "Pedido Recebido") return "Pedido Enviado";
+  if (status === "Pedido Enviado") return "Pedido Enviado";
+  return "Em separaÃ§Ã£o";
 }
 
 function normalizeText(value) {
@@ -2154,8 +2155,8 @@ function isValidBrazilMobile(value) {
 
 function normalizeBath(value) {
   const bath = String(value || "").trim();
-  if (["Ouro Quebec", "Ouro Diamont", "Ouro 18k", "Ouro Rosé", "Prata"].includes(bath)) return "Ouro";
-  if (["Ródio Branco", "Rodio", "Ródio"].includes(bath)) return "Ródio";
+  if (["Ouro Quebec", "Ouro Diamont", "Ouro 18k", "Ouro RosÃ©", "Prata"].includes(bath)) return "Ouro";
+  if (["RÃ³dio Branco", "Rodio", "RÃ³dio"].includes(bath)) return "RÃ³dio";
   return bath;
 }
 
