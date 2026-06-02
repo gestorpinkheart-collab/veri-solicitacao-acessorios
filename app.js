@@ -89,6 +89,8 @@ let costSettings = { goldValue: 800, rhodiumValue: 2500, rhodiumFactor: 0.7 };
 let currentSession = loadSession();
 let apiAvailable = false;
 let users = loadUsers();
+let masterUsers = [];
+let masterCredential = null;
 let pendingUser = null;
 let activeLoginMode = "common";
 let collaboratorAccessMode = "login";
@@ -193,6 +195,8 @@ const elements = {
   masterCostPieces: document.querySelector("#masterCostPieces"),
   masterCostTotal: document.querySelector("#masterCostTotal"),
   masterCostBody: document.querySelector("#masterCostBody"),
+  refreshUsers: document.querySelector("#refreshUsers"),
+  masterUsersBody: document.querySelector("#masterUsersBody"),
   accessLogsBody: document.querySelector("#accessLogsBody"),
   orderHistoryBody: document.querySelector("#orderHistoryBody"),
   costSettingsForm: document.querySelector("#costSettingsForm"),
@@ -255,6 +259,7 @@ async function init() {
   elements.reportFilterPriority.addEventListener("change", renderReports);
   elements.refreshMyOrders?.addEventListener("click", refreshOrders);
   elements.refreshMasterData?.addEventListener("click", loadMasterData);
+  elements.refreshUsers?.addEventListener("click", loadMasterUsers);
   elements.masterTabButtons.forEach((button) => {
     button.addEventListener("click", () => showMasterTab(button.dataset.masterTab));
   });
@@ -391,6 +396,13 @@ async function handleCollaboratorLogin() {
     return;
   }
 
+  if (user.mustChangePassword) {
+    pendingUser = { ...user, currentPassword: password };
+    elements.entryScreen.hidden = true;
+    elements.passwordScreen.hidden = false;
+    return;
+  }
+
   saveSession({
     name: user.name,
     phone: user.phone,
@@ -478,6 +490,9 @@ async function handleInternalLogin() {
     return;
   }
 
+  if (user.role === "master") {
+    masterCredential = { login, password };
+  }
   saveSession({ name: user.name, role: user.role, login: user.login });
 }
 
@@ -586,7 +601,16 @@ async function handlePasswordChange(event) {
     }
     pendingUser = null;
     elements.passwordForm.reset();
-    saveSession({ name: payload.user.name, role: payload.user.role, login: payload.user.login });
+    if (payload.user.role === "master") {
+      masterCredential = { login: payload.user.login, password };
+    }
+    saveSession({
+      name: payload.user.name,
+      role: payload.user.role,
+      login: payload.user.login,
+      phone: payload.user.phone || "",
+      origin: payload.user.origin || "",
+    });
   } catch (error) {
     users = users.map((user) =>
       user.login === pendingUser.login ? { ...user, password, mustChangePassword: false } : user
@@ -595,7 +619,7 @@ async function handlePasswordChange(event) {
     const user = users.find((item) => item.login === pendingUser.login);
     pendingUser = null;
     elements.passwordForm.reset();
-    if (user) saveSession({ name: user.name, role: user.role, login: user.login });
+    if (user) saveSession({ name: user.name, role: user.role, login: user.login, phone: user.phone || "", origin: user.origin || "" });
     else elements.passwordError.textContent = error.message;
   }
 }
@@ -633,6 +657,8 @@ function showMasterTab(tabId) {
 function logout() {
   sessionStorage.removeItem(SESSION_KEY);
   currentSession = null;
+  masterCredential = null;
+  masterUsers = [];
   elements.loginError.textContent = "";
   elements.masterPassword.value = "";
   if (elements.loginPhone) elements.loginPhone.value = "";
@@ -906,7 +932,34 @@ async function loadMasterData() {
   } catch (error) {
     console.error(error);
   }
+  await loadMasterUsers(false);
   renderMasterPanel();
+}
+
+async function loadMasterUsers(shouldRender = true) {
+  if (!isMasterUser() || !masterCredential) {
+    if (elements.masterUsersBody) {
+      elements.masterUsersBody.innerHTML = '<tr><td colspan="9">Entre novamente como Master para carregar os usu\u00e1rios.</td></tr>';
+    }
+    return;
+  }
+
+  try {
+    const response = await fetch("/api/users/admin-list", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ master: masterCredential }),
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "N\u00e3o foi poss\u00edvel carregar usu\u00e1rios.");
+    masterUsers = Array.isArray(payload.users) ? payload.users : [];
+    if (shouldRender) renderMasterPanel();
+  } catch (error) {
+    masterUsers = [];
+    if (elements.masterUsersBody) {
+      elements.masterUsersBody.innerHTML = `<tr><td colspan="9">${error.message}</td></tr>`;
+    }
+  }
 }
 
 async function loadCostData() {
@@ -1344,6 +1397,7 @@ function renderMasterPanel() {
   renderMasterCostDashboard();
   renderAccessLogs();
   renderOrderHistory(historyRows);
+  renderMasterUsers();
   renderPrices();
 }
 
@@ -1455,6 +1509,7 @@ function accessEventLabel(eventType) {
   const labels = {
     login: "Login",
     alerta_nome_celular: "Nome diferente no celular",
+    senha_provisoria: "Senha provis\u00f3ria",
   };
   return labels[eventType] || eventType || "Login";
 }
@@ -1477,6 +1532,74 @@ function renderOrderHistory(historyRows) {
     `;
     elements.orderHistoryBody.append(row);
   });
+}
+
+function renderMasterUsers() {
+  if (!elements.masterUsersBody) return;
+  elements.masterUsersBody.innerHTML = "";
+
+  if (!masterCredential) {
+    elements.masterUsersBody.innerHTML = '<tr><td colspan="9">Entre novamente como Master para liberar a administra\u00e7\u00e3o de usu\u00e1rios.</td></tr>';
+    return;
+  }
+
+  if (!masterUsers.length) {
+    elements.masterUsersBody.innerHTML = '<tr><td colspan="9">Nenhum usu\u00e1rio cadastrado.</td></tr>';
+    return;
+  }
+
+  masterUsers.forEach((user) => {
+    const row = document.createElement("tr");
+    const needsChange = Boolean(user.mustChangePassword);
+    row.innerHTML = `
+      <td>${user.login}</td>
+      <td>${user.name}</td>
+      <td>${roleLabel(user.role)}</td>
+      <td>${user.origin || ""}</td>
+      <td>${formatPhone(user.phone) || ""}</td>
+      <td>${formatDateTime(user.createdAt)}</td>
+      <td>${formatDateTime(user.updatedAt)}</td>
+      <td><span class="pill ${needsChange ? "urgent" : ""}">${needsChange ? "Troca pendente" : "Ativo"}</span></td>
+      <td>
+        <button class="ghost-button small" type="button" data-reset-user="${user.login}" title="Definir senha provis\u00f3ria">Senha provis\u00f3ria</button>
+      </td>
+    `;
+    row.querySelector("[data-reset-user]").addEventListener("click", () => resetUserPassword(user.login));
+    elements.masterUsersBody.append(row);
+  });
+}
+
+async function resetUserPassword(login) {
+  if (!isMasterUser() || !masterCredential) return;
+  const user = masterUsers.find((item) => item.login === login);
+  const label = user?.name || login;
+  const temporaryPassword = prompt(`Definir senha provis\u00f3ria para ${label}.\n\nO usu\u00e1rio precisar\u00e1 trocar a senha no pr\u00f3ximo acesso.`);
+  if (temporaryPassword === null) return;
+  const trimmedPassword = temporaryPassword.trim();
+
+  if (trimmedPassword.length < 4) {
+    alert("A senha provis\u00f3ria deve ter pelo menos 4 caracteres.");
+    return;
+  }
+
+  try {
+    const response = await fetch("/api/users/admin-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        master: masterCredential,
+        login,
+        newPassword: trimmedPassword,
+      }),
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "N\u00e3o foi poss\u00edvel redefinir a senha.");
+    masterUsers = masterUsers.map((item) => (item.login === payload.user.login ? payload.user : item));
+    renderMasterUsers();
+    alert("Senha provis\u00f3ria definida. No pr\u00f3ximo acesso, o usu\u00e1rio ser\u00e1 direcionado para trocar a senha.");
+  } catch (error) {
+    alert(error.message);
+  }
 }
 
 function renderPrices() {

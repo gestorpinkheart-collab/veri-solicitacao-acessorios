@@ -209,6 +209,38 @@ class RequestHandler(SimpleHTTPRequestHandler):
                 self.send_json({"ok": False, "error": str(exc)}, status=503)
             return
 
+        if self.path == "/api/users/admin-list":
+            try:
+                payload = self.read_json_body()
+            except ValueError:
+                self.send_error(400, "JSON invalido")
+                return
+
+            try:
+                users = list_users_for_master(payload)
+                self.send_json({"ok": True, "users": users})
+            except ValueError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=403)
+            except StorageError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=503)
+            return
+
+        if self.path == "/api/users/admin-password":
+            try:
+                payload = self.read_json_body()
+            except ValueError:
+                self.send_error(400, "JSON invalido")
+                return
+
+            try:
+                user = admin_reset_user_password(payload)
+                self.send_json({"ok": True, "user": user})
+            except ValueError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=400)
+            except StorageError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=503)
+            return
+
         if self.path == "/api/users":
             try:
                 payload = self.read_json_body()
@@ -528,8 +560,59 @@ def change_user_password(payload):
         "passwordHash": hash_password(new_password, salt),
         "passwordSalt": salt,
         "mustChangePassword": False,
+        "updatedAt": datetime.now().isoformat(),
     }
     save_user(updated)
+    return public_user(updated)
+
+
+def authenticate_master(payload):
+    master = payload.get("master") if isinstance(payload, dict) else {}
+    if not isinstance(master, dict):
+        raise ValueError("Credencial Master obrigatoria.")
+    credentials = {
+        "login": str(master.get("login", "")).strip(),
+        "password": str(master.get("password", "")),
+        "role": "master",
+    }
+    user = authenticate_user(credentials)
+    if not user or user.get("role") != "master":
+        raise ValueError("Acesso Master invalido.")
+    return user
+
+
+def list_users_for_master(payload):
+    authenticate_master(payload)
+    return [public_user(user) for user in read_users()]
+
+
+def admin_reset_user_password(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("Dados invalidos.")
+    master_user = authenticate_master(payload)
+    login = str(payload.get("login", "")).strip()
+    new_password = str(payload.get("newPassword", ""))
+    if len(new_password) < 4:
+        raise ValueError("A senha provisoria deve ter pelo menos 4 caracteres.")
+    user = find_user(login)
+    if not user:
+        raise ValueError("Usuario nao encontrado.")
+    salt = token_hex(8)
+    updated = {
+        **user,
+        "passwordHash": hash_password(new_password, salt),
+        "passwordSalt": salt,
+        "mustChangePassword": True,
+        "updatedAt": datetime.now().isoformat(),
+    }
+    save_user(updated)
+    write_access_log({
+        "userName": master_user.get("name", "Master"),
+        "login": master_user.get("login", ""),
+        "role": "master",
+        "eventType": "senha_provisoria",
+        "details": {"targetLogin": login},
+    })
     return public_user(updated)
 
 
@@ -564,6 +647,8 @@ def create_user(payload):
         "passwordHash": hash_password(password, salt),
         "passwordSalt": salt,
         "mustChangePassword": False,
+        "createdAt": datetime.now().isoformat(),
+        "updatedAt": datetime.now().isoformat(),
     }
     save_user(user)
     return public_user(user)
@@ -958,6 +1043,7 @@ def normalize_cost_settings(settings):
 
 def default_user_record(user):
     salt = token_hex(8)
+    now = datetime.now().isoformat()
     return {
         "login": user["login"],
         "name": user["name"],
@@ -965,6 +1051,8 @@ def default_user_record(user):
         "passwordHash": hash_password(user["password"], salt),
         "passwordSalt": salt,
         "mustChangePassword": bool(user.get("mustChangePassword", False)),
+        "createdAt": now,
+        "updatedAt": now,
     }
 
 
@@ -986,6 +1074,8 @@ def public_user(user):
         "phone": user.get("phone", ""),
         "origin": user.get("origin", ""),
         "mustChangePassword": bool(user.get("mustChangePassword")),
+        "createdAt": user.get("createdAt", ""),
+        "updatedAt": user.get("updatedAt", ""),
     }
 
 
@@ -1179,6 +1269,8 @@ def db_to_user(row):
         "passwordHash": row.get("password_hash", ""),
         "passwordSalt": row.get("password_salt", ""),
         "mustChangePassword": bool(row.get("must_change_password")),
+        "createdAt": row.get("created_at", ""),
+        "updatedAt": row.get("updated_at", ""),
     }
 
 

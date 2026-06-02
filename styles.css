@@ -1136,6 +1136,13 @@ select:disabled {
   border-radius: 0;
 }
 
+.subtle-text {
+  margin: -6px 0 14px;
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
 .price-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
