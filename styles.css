@@ -293,6 +293,17 @@ form,
   flex-wrap: wrap;
 }
 
+.request-top-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin: 8px 0 14px;
+  padding: 10px;
+  border: 1px solid rgba(146, 172, 160, 0.24);
+  border-radius: 10px;
+  background: rgba(146, 172, 160, 0.08);
+}
+
 .login-error {
   min-height: 20px;
   margin: 0;
@@ -752,7 +763,7 @@ select:disabled {
 .item-row {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(230px, 1.35fr) minmax(170px, 0.9fr) minmax(180px, 1fr) minmax(170px, 0.45fr) 48px;
+  grid-template-columns: minmax(230px, 1.35fr) minmax(170px, 0.9fr) minmax(180px, 1fr) minmax(170px, 0.45fr) 92px 48px;
   gap: 12px;
   align-items: end;
   padding: 42px 14px 14px;
@@ -778,9 +789,11 @@ select:disabled {
 
 .new-item-row {
   border-color: rgba(146, 172, 160, 0.9);
-  border-left: 7px solid var(--accent);
-  background: linear-gradient(145deg, rgba(146, 172, 160, 0.28), #ffffff 62%);
-  box-shadow: 0 18px 34px rgba(47, 71, 61, 0.16);
+  border-left: 9px solid var(--accent);
+  background: linear-gradient(145deg, rgba(146, 172, 160, 0.36), #ffffff 58%);
+  box-shadow: 0 20px 38px rgba(47, 71, 61, 0.2);
+  outline: 2px solid rgba(146, 172, 160, 0.28);
+  outline-offset: 3px;
 }
 
 .new-item-row .item-index {
@@ -827,6 +840,14 @@ select:disabled {
   background: #eaf1ee;
   color: var(--accent-dark);
   border: 1px dashed #92ACA0;
+}
+
+.add-item-inline {
+  width: 100%;
+  min-height: 42px;
+  align-self: end;
+  justify-content: center;
+  white-space: nowrap;
 }
 
 .filters {

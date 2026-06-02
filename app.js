@@ -134,6 +134,7 @@ const elements = {
   views: document.querySelectorAll(".app-view"),
   form: document.querySelector("#orderForm"),
   submitOrder: document.querySelector("#submitOrder"),
+  submitOrderButtons: document.querySelectorAll(".submit-order-button"),
   editingId: document.querySelector("#editingId"),
   formTitle: document.querySelector("#formTitle"),
   orderNumberPreview: document.querySelector("#orderNumberPreview"),
@@ -143,6 +144,7 @@ const elements = {
   status: document.querySelector("#status"),
   notes: document.querySelector("#notes"),
   addItem: document.querySelector("#addItem"),
+  addItemTop: document.querySelector("#addItemTop"),
   addItemBottom: document.querySelector("#addItemBottom"),
   itemsList: document.querySelector("#itemsList"),
   itemTemplate: document.querySelector("#itemTemplate"),
@@ -242,6 +244,7 @@ async function init() {
   elements.logout.addEventListener("click", logout);
   elements.form.addEventListener("submit", handleSubmit);
   elements.addItem.addEventListener("click", () => addItemRow());
+  elements.addItemTop?.addEventListener("click", () => addItemRow());
   elements.addItemBottom.addEventListener("click", () => addItemRow());
   elements.cancelEdit.addEventListener("click", resetForm);
   elements.exportCsv.addEventListener("click", exportCsv);
@@ -399,7 +402,7 @@ async function handleCollaboratorLogin() {
   }
 
   if (user.mustChangePassword) {
-    pendingUser = { ...user, currentPassword: password };
+    pendingUser = { ...user, currentPassword: password, accessMode: activeLoginMode };
     elements.entryScreen.hidden = true;
     elements.passwordScreen.hidden = false;
     return;
@@ -411,6 +414,7 @@ async function handleCollaboratorLogin() {
     origin: user.origin,
     role: "collaborator",
     login: user.login,
+    accessMode: "collaborator",
   });
 }
 
@@ -495,10 +499,10 @@ async function handleInternalLogin() {
     return;
   }
 
-  if (user.role === "master") {
+  if (user.role === "master" && activeLoginMode === "master") {
     masterCredential = { login, password };
   }
-  saveSession({ name: user.name, role: user.role, login: user.login });
+  saveSession({ name: user.name, role: user.role, login: user.login, accessMode: activeLoginMode });
 }
 
 async function authenticateInternalUser(login, password, role) {
@@ -604,9 +608,10 @@ async function handlePasswordChange(event) {
       elements.passwordError.textContent = payload.error || "N\u00e3o foi poss\u00edvel trocar a senha.";
       return;
     }
+    const accessMode = pendingUser?.accessMode || payload.user.role;
     pendingUser = null;
     elements.passwordForm.reset();
-    if (payload.user.role === "master") {
+    if (payload.user.role === "master" && accessMode === "master") {
       masterCredential = { login: payload.user.login, password };
     }
     saveSession({
@@ -615,6 +620,7 @@ async function handlePasswordChange(event) {
       login: payload.user.login,
       phone: payload.user.phone || "",
       origin: payload.user.origin || "",
+      accessMode,
     });
   } catch (error) {
     users = users.map((user) =>
@@ -622,9 +628,10 @@ async function handlePasswordChange(event) {
     );
     saveUsers();
     const user = users.find((item) => item.login === pendingUser.login);
+    const accessMode = pendingUser?.accessMode || user?.role || "";
     pendingUser = null;
     elements.passwordForm.reset();
-    if (user) saveSession({ name: user.name, role: user.role, login: user.login, phone: user.phone || "", origin: user.origin || "" });
+    if (user) saveSession({ name: user.name, role: user.role, login: user.login, phone: user.phone || "", origin: user.origin || "", accessMode });
     else elements.passwordError.textContent = error.message;
   }
 }
@@ -639,15 +646,16 @@ function applySessionState() {
 
   elements.activeUser.textContent = `Conectado: ${currentSession.name}`;
   document.body.classList.toggle("is-admin", isInternalUser());
-  document.body.classList.toggle("is-master", isMasterUser());
+  document.body.classList.toggle("is-master", isMasterWorkspaceUser());
   document.body.classList.toggle("is-collaborator", currentSession.role === "collaborator");
   showView(isInternalUser() ? "managementView" : "requestView");
   resetForm();
-  if (isMasterUser()) loadMasterData();
+  if (isMasterWorkspaceUser()) loadMasterData();
   render();
 }
 
 function showView(viewId) {
+  if (viewId === "masterView" && !isMasterWorkspaceUser()) viewId = "managementView";
   elements.views.forEach((view) => view.classList.toggle("active-view", view.id === viewId));
   elements.viewButtons.forEach((button) => button.classList.toggle("active", button.dataset.view === viewId));
 }
@@ -1128,9 +1136,11 @@ async function handleSubmit(event) {
 }
 
 function setSubmitButtonState(isBusy) {
-  if (!elements.submitOrder) return;
-  elements.submitOrder.disabled = isBusy;
-  elements.submitOrder.textContent = isBusy ? "Finalizando..." : "Finalizar pedido";
+  const buttons = elements.submitOrderButtons?.length ? elements.submitOrderButtons : [elements.submitOrder].filter(Boolean);
+  buttons.forEach((button) => {
+    button.disabled = isBusy;
+    button.textContent = isBusy ? "Finalizando..." : "Finalizar pedido";
+  });
 }
 
 function getItemsFromForm() {
@@ -1253,6 +1263,7 @@ function addItemRow(item = {}) {
   row.querySelector(".item-quantity").addEventListener("input", () => updateItemCostPreview(row));
   populateBathOptions(row.querySelector(".item-bath"), item.bath);
   row.querySelector(".item-quantity").value = item.quantity || "";
+  row.querySelector(".add-item-inline")?.addEventListener("click", () => addItemRow());
   row.querySelector(".remove-item").addEventListener("click", () => {
     if (elements.itemsList.children.length > 1) {
       row.remove();
@@ -1348,10 +1359,22 @@ function resetForm() {
   addItemRow();
 }
 
-function editOrder(id) {
+async function editOrder(id) {
+  if (!isInternalUser()) {
+    try {
+      orders = await loadOrders(false);
+    } catch {
+      // Use the current screen data if the refresh is temporarily unavailable.
+    }
+  }
+
   const order = orders.find((item) => item.id === id);
   if (!order) return;
-  if (!canManageOrder(order)) return;
+  if (!canManageOrder(order)) {
+    alert("Este pedido j\u00e1 foi movimentado pela Gest\u00e3o de Pedidos e n\u00e3o pode mais ser editado. Para solicitar altera\u00e7\u00f5es, crie um novo pedido.");
+    render();
+    return;
+  }
 
   elements.editingId.value = order.id;
   elements.formTitle.textContent = "Editar pedido";
@@ -1957,6 +1980,7 @@ function canManageOrder(order) {
   if (isInternalUser()) return true;
   return (
     normalizeText(order.requester) === normalizeText(currentSession?.name || "") &&
+    normalizePhone(order.phone) === normalizePhone(currentSession?.phone || "") &&
     normalizeStatus(order.status) === "Pedido Recebido"
   );
 }
@@ -1966,7 +1990,11 @@ function isInternalUser() {
 }
 
 function isMasterUser() {
-  return currentSession?.role === "master";
+  return isMasterWorkspaceUser();
+}
+
+function isMasterWorkspaceUser() {
+  return currentSession?.role === "master" && currentSession?.accessMode !== "consultant";
 }
 
 function buildStatusMessage(order) {
