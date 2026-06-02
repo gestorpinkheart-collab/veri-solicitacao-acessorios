@@ -91,6 +91,7 @@ let apiAvailable = false;
 let users = loadUsers();
 let pendingUser = null;
 let activeLoginMode = "common";
+let collaboratorAccessMode = "login";
 
 const elements = {
   entryScreen: document.querySelector("#entryScreen"),
@@ -105,6 +106,19 @@ const elements = {
   internalLoginFields: document.querySelector("#internalLoginFields"),
   loginName: document.querySelector("#loginName"),
   loginPhone: document.querySelector("#loginPhone"),
+  collaboratorLoginAccess: document.querySelector("#collaboratorLoginAccess"),
+  collaboratorNewAccess: document.querySelector("#collaboratorNewAccess"),
+  collaboratorLoginFields: document.querySelector("#collaboratorLoginFields"),
+  collaboratorRegisterFields: document.querySelector("#collaboratorRegisterFields"),
+  collaboratorLogin: document.querySelector("#collaboratorLogin"),
+  collaboratorPassword: document.querySelector("#collaboratorPassword"),
+  registerLogin: document.querySelector("#registerLogin"),
+  registerFullName: document.querySelector("#registerFullName"),
+  registerOrigin: document.querySelector("#registerOrigin"),
+  registerPhone: document.querySelector("#registerPhone"),
+  registerPassword: document.querySelector("#registerPassword"),
+  registerConfirmPassword: document.querySelector("#registerConfirmPassword"),
+  loginSubmitButton: document.querySelector("#loginSubmitButton"),
   internalLogin: document.querySelector("#internalLogin"),
   masterPassword: document.querySelector("#masterPassword"),
   loginError: document.querySelector("#loginError"),
@@ -200,8 +214,10 @@ async function init() {
   populateOriginOptions();
   populateStatusOptions();
   populatePriceOptions();
+  populateRegisterOriginOptions();
   try {
     orders = await loadOrders(false);
+    await loadCostData();
   } catch (error) {
     orders = [];
     apiAvailable = false;
@@ -213,6 +229,9 @@ async function init() {
   elements.passwordForm.addEventListener("submit", handlePasswordChange);
   document.querySelectorAll("[data-login-mode]").forEach((button) => {
     button.addEventListener("click", () => setLoginMode(button.dataset.loginMode));
+  });
+  document.querySelectorAll("[data-collaborator-access]").forEach((button) => {
+    button.addEventListener("click", () => setCollaboratorAccessMode(button.dataset.collaboratorAccess));
   });
   elements.logout.addEventListener("click", logout);
   elements.form.addEventListener("submit", handleSubmit);
@@ -314,6 +333,14 @@ async function handleLogin(event) {
     return;
   }
 
+  if (collaboratorAccessMode === "register") {
+    await handleCollaboratorRegistration();
+    return;
+  }
+
+  await handleCollaboratorLogin();
+  return;
+
   const name = elements.loginName.value.trim();
   const phone = normalizeLoginPhone(elements.loginPhone.value);
 
@@ -340,6 +367,92 @@ async function handleLogin(event) {
   }
 
   saveSession({ name, phone, role: "collaborator" });
+}
+
+async function handleCollaboratorLogin() {
+  const login = elements.collaboratorLogin.value.trim();
+  const password = elements.collaboratorPassword.value;
+
+  if (!login || !password) {
+    showLoginError("Informe usuário e senha para entrar.");
+    return;
+  }
+
+  let user = null;
+  try {
+    user = await authenticateInternalUser(login, password, "collaborator");
+  } catch (error) {
+    showLoginError(error.message);
+    return;
+  }
+
+  if (!user) {
+    showLoginError("Usuário ou senha inválidos.");
+    return;
+  }
+
+  saveSession({
+    name: user.name,
+    phone: user.phone,
+    origin: user.origin,
+    role: "collaborator",
+    login: user.login,
+  });
+}
+
+async function handleCollaboratorRegistration() {
+  const login = elements.registerLogin.value.trim();
+  const name = elements.registerFullName.value.trim();
+  const origin = elements.registerOrigin.value;
+  const phone = normalizeLoginPhone(elements.registerPhone.value);
+  const password = elements.registerPassword.value;
+  const confirmPassword = elements.registerConfirmPassword.value;
+
+  if (!login || !name || !origin || !phone || !password || !confirmPassword) {
+    showLoginError("Preencha todos os campos para criar o acesso.");
+    return;
+  }
+  if (!name.includes(" ")) {
+    showLoginError("Informe o nome completo do colaborador.");
+    return;
+  }
+  if (!isValidBrazilMobile(phone)) {
+    showLoginError("Informe um telefone corporativo válido com DDD e 9 dígitos. Exemplo: (11) 99999-9999.");
+    return;
+  }
+  if (password.length < 4) {
+    showLoginError("A senha deve ter pelo menos 4 caracteres.");
+    return;
+  }
+  if (password !== confirmPassword) {
+    showLoginError("A confirmação de senha não confere.");
+    return;
+  }
+
+  try {
+    const response = await fetch("/api/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ login, name, origin, phone, password, role: "collaborator" }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      showLoginError(payload.error || "Não foi possível criar o acesso.");
+      return;
+    }
+    setCollaboratorAccessMode("login");
+    elements.collaboratorLogin.value = login;
+    elements.collaboratorPassword.value = "";
+    elements.registerLogin.value = "";
+    elements.registerFullName.value = "";
+    elements.registerOrigin.value = "";
+    elements.registerPhone.value = "";
+    elements.registerPassword.value = "";
+    elements.registerConfirmPassword.value = "";
+    showLoginError("Acesso criado. Digite sua senha para entrar.");
+  } catch (error) {
+    showLoginError(error.message || "Não foi possível criar o acesso.");
+  }
 }
 
 async function handleInternalLogin() {
@@ -423,8 +536,20 @@ function setLoginMode(mode) {
   elements.internalLoginFields.classList.toggle("active-login-mode", mode === "consultant" || mode === "master");
   elements.internalLogin.value = "";
   elements.masterPassword.value = "";
-  elements.loginName.value = "";
-  elements.loginPhone.value = "";
+  if (elements.loginName) elements.loginName.value = "";
+  if (elements.loginPhone) elements.loginPhone.value = "";
+  if (mode === "common") setCollaboratorAccessMode(collaboratorAccessMode);
+  elements.loginSubmitButton.textContent = mode === "common" && collaboratorAccessMode === "register" ? "Criar acesso" : "Entrar";
+}
+
+function setCollaboratorAccessMode(mode) {
+  collaboratorAccessMode = mode;
+  elements.loginError.textContent = "";
+  elements.collaboratorLoginAccess?.classList.toggle("active", mode === "login");
+  elements.collaboratorNewAccess?.classList.toggle("active", mode === "register");
+  elements.collaboratorLoginFields?.classList.toggle("active-collaborator-mode", mode === "login");
+  elements.collaboratorRegisterFields?.classList.toggle("active-collaborator-mode", mode === "register");
+  elements.loginSubmitButton.textContent = mode === "register" ? "Criar acesso" : "Entrar";
 }
 
 async function handlePasswordChange(event) {
@@ -510,14 +635,15 @@ function logout() {
   currentSession = null;
   elements.loginError.textContent = "";
   elements.masterPassword.value = "";
-  elements.loginPhone.value = "";
+  if (elements.loginPhone) elements.loginPhone.value = "";
+  elements.collaboratorPassword.value = "";
   elements.appShell.hidden = true;
   elements.passwordScreen.hidden = true;
   elements.entryScreen.hidden = false;
   document.body.classList.remove("is-admin");
   document.body.classList.remove("is-master");
   document.body.classList.remove("is-collaborator");
-  elements.loginName.focus();
+  elements.collaboratorLogin?.focus();
 }
 
 function populateOriginOptions() {
@@ -525,6 +651,11 @@ function populateOriginOptions() {
     elements.origin.append(new Option(origin, origin));
     elements.dashboardFilterOrigin.append(new Option(origin, origin));
   }
+}
+
+function populateRegisterOriginOptions() {
+  if (!elements.registerOrigin) return;
+  origins.forEach((origin) => elements.registerOrigin.append(new Option(origin, origin)));
 }
 
 function populateStatusOptions() {
@@ -1046,7 +1177,13 @@ function addItemRow(item = {}) {
   const modelSelect = row.querySelector(".item-model");
   populateModelOptions(modelSelect, item.model);
   populateSizeOptions(row, modelSelect.value, item.size);
-  modelSelect.addEventListener("change", () => populateSizeOptions(row, modelSelect.value));
+  modelSelect.addEventListener("change", () => {
+    populateSizeOptions(row, modelSelect.value);
+    updateItemCostPreview(row);
+  });
+  row.querySelector(".item-size").addEventListener("change", () => updateItemCostPreview(row));
+  row.querySelector(".item-bath").addEventListener("change", () => updateItemCostPreview(row));
+  row.querySelector(".item-quantity").addEventListener("input", () => updateItemCostPreview(row));
   populateBathOptions(row.querySelector(".item-bath"), item.bath);
   row.querySelector(".item-quantity").value = item.quantity || "";
   row.querySelector(".remove-item").addEventListener("click", () => {
@@ -1057,6 +1194,7 @@ function addItemRow(item = {}) {
   });
   elements.itemsList.prepend(row);
   refreshItemRowLabels(row);
+  updateItemCostPreview(row);
 }
 
 function refreshItemRowLabels(newRow = null) {
@@ -1066,6 +1204,22 @@ function refreshItemRowLabels(newRow = null) {
     const badge = row.querySelector(".item-index");
     if (badge) badge.textContent = `Item ${index + 1}`;
   });
+}
+
+function updateItemCostPreview(row) {
+  const preview = row.querySelector(".item-cost-preview");
+  if (!preview) return;
+  const item = {
+    model: row.querySelector(".item-model").value,
+    size: row.querySelector(".item-size").value,
+    bath: row.querySelector(".item-bath").value,
+    quantity: Number(row.querySelector(".item-quantity").value || 0),
+  };
+  const unitCost = Number(findPrice(item)?.unitCost || 0);
+  const total = unitCost * item.quantity;
+  preview.textContent = item.model && item.size && item.quantity > 0
+    ? `Custo bruto: ${formatCostMoney(total)}`
+    : "Custo bruto: R$ 0,00";
 }
 
 function populateBathOptions(select, selectedBath = "") {
@@ -1120,6 +1274,7 @@ function resetForm() {
   elements.orderNumberPreview.textContent = "Novo pedido a cada envio";
   elements.requester.value = isInternalUser() ? "" : currentSession?.name || "";
   elements.requester.readOnly = !isInternalUser();
+  if (!isInternalUser() && currentSession?.origin) elements.origin.value = currentSession.origin;
   elements.status.value = statuses[0];
   elements.status.disabled = !isInternalUser();
   elements.itemsList.innerHTML = "";

@@ -140,7 +140,9 @@ with check (auth.role() = 'service_role');
 create table if not exists public.accessory_users (
   login text primary key,
   name text not null,
-  role text not null check (role in ('master', 'consultant')),
+  role text not null check (role in ('master', 'consultant', 'collaborator')),
+  phone text,
+  origin text,
   password_hash text not null,
   password_salt text not null,
   must_change_password boolean not null default true,
@@ -148,7 +150,13 @@ create table if not exists public.accessory_users (
   updated_at timestamptz not null default now()
 );
 
+alter table public.accessory_users add column if not exists phone text;
+alter table public.accessory_users add column if not exists origin text;
+alter table public.accessory_users drop constraint if exists accessory_users_role_check;
+alter table public.accessory_users add constraint accessory_users_role_check check (role in ('master', 'consultant', 'collaborator'));
+
 create index if not exists accessory_users_role_idx on public.accessory_users (role);
+create index if not exists accessory_users_phone_idx on public.accessory_users (phone);
 
 drop trigger if exists accessory_users_updated_at on public.accessory_users;
 create trigger accessory_users_updated_at

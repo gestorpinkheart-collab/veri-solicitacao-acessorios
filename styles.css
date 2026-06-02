@@ -243,6 +243,40 @@ form,
   gap: 14px;
 }
 
+.collaborator-access-switch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(146, 172, 160, 0.12);
+}
+
+.switch-button {
+  border: 0;
+  border-radius: 10px;
+  min-height: 40px;
+  background: transparent;
+  color: var(--accent-dark);
+  cursor: pointer;
+  font-weight: 900;
+}
+
+.switch-button.active {
+  background: #fff;
+  box-shadow: 0 10px 22px rgba(47, 71, 61, 0.12);
+}
+
+.collaborator-access-mode {
+  display: none;
+}
+
+.active-collaborator-mode {
+  display: grid;
+  gap: 14px;
+}
+
 .login-actions,
 .form-actions,
 .items-heading,
@@ -751,6 +785,21 @@ select:disabled {
 .new-item-row .item-index {
   background: var(--accent);
   color: #fff;
+}
+
+.item-cost-preview {
+  display: inline-flex;
+  align-items: center;
+  width: max-content;
+  max-width: 100%;
+  min-height: 22px;
+  margin-top: 6px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: rgba(146, 172, 160, 0.16);
+  color: var(--accent-dark);
+  font-size: 0.74rem;
+  font-weight: 900;
 }
 
 .add-row-button {

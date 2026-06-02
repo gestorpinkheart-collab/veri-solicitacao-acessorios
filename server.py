@@ -203,6 +203,22 @@ class RequestHandler(SimpleHTTPRequestHandler):
                 self.send_json({"ok": False, "error": str(exc)}, status=503)
             return
 
+        if self.path == "/api/users":
+            try:
+                payload = self.read_json_body()
+            except ValueError:
+                self.send_error(400, "JSON invÃƒÂ¡lido")
+                return
+
+            try:
+                user = create_user(payload)
+                self.send_json({"ok": True, "user": user}, status=201)
+            except ValueError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=400)
+            except StorageError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=503)
+            return
+
         if self.path == "/api/access-logs":
             try:
                 access = self.read_json_body()
@@ -509,6 +525,42 @@ def change_user_password(payload):
     }
     save_user(updated)
     return public_user(updated)
+
+
+def create_user(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("Dados invÃƒÂ¡lidos.")
+    login = str(payload.get("login", "")).strip()
+    name = str(payload.get("name", "")).strip()
+    origin = str(payload.get("origin", "")).strip()
+    phone = only_digits(payload.get("phone", ""))
+    password = str(payload.get("password", ""))
+    role = str(payload.get("role", "collaborator")).strip() or "collaborator"
+
+    if role != "collaborator":
+        raise ValueError("Perfil de cadastro invÃƒÂ¡lido.")
+    if not login or not name or not origin or not phone or not password:
+        raise ValueError("Preencha todos os campos obrigatÃƒÂ³rios.")
+    if not is_valid_mobile(phone):
+        raise ValueError("Informe um telefone corporativo vÃƒÂ¡lido com DDD e 9 dÃƒÂ­gitos.")
+    if len(password) < 4:
+        raise ValueError("A senha deve ter pelo menos 4 caracteres.")
+    if find_user(login):
+        raise ValueError("Este usuÃƒÂ¡rio jÃƒÂ¡ existe. Escolha outro login.")
+
+    salt = token_hex(8)
+    user = {
+        "login": login,
+        "name": name,
+        "role": role,
+        "phone": phone,
+        "origin": origin,
+        "passwordHash": hash_password(password, salt),
+        "passwordSalt": salt,
+        "mustChangePassword": False,
+    }
+    save_user(user)
+    return public_user(user)
 
 
 def find_user(login):
@@ -925,6 +977,8 @@ def public_user(user):
         "login": user.get("login", ""),
         "name": user.get("name", ""),
         "role": user.get("role", ""),
+        "phone": user.get("phone", ""),
+        "origin": user.get("origin", ""),
         "mustChangePassword": bool(user.get("mustChangePassword")),
     }
 
@@ -1101,6 +1155,8 @@ def user_to_db(user):
         "login": user.get("login", ""),
         "name": user.get("name", ""),
         "role": user.get("role", ""),
+        "phone": user.get("phone", ""),
+        "origin": user.get("origin", ""),
         "password_hash": user.get("passwordHash", ""),
         "password_salt": user.get("passwordSalt", ""),
         "must_change_password": bool(user.get("mustChangePassword")),
@@ -1112,6 +1168,8 @@ def db_to_user(row):
         "login": row.get("login", ""),
         "name": row.get("name", ""),
         "role": row.get("role", ""),
+        "phone": row.get("phone", ""),
+        "origin": row.get("origin", ""),
         "passwordHash": row.get("password_hash", ""),
         "passwordSalt": row.get("password_salt", ""),
         "mustChangePassword": bool(row.get("must_change_password")),
@@ -1124,6 +1182,19 @@ def normalize(value):
 
 def only_digits(value):
     return "".join(ch for ch in str(value or "") if ch.isdigit())
+
+
+def is_valid_mobile(value):
+    phone = only_digits(value)
+    if len(phone) == 13 and phone.startswith("55"):
+        phone = phone[2:]
+    if len(phone) != 11 or phone == phone[0] * 11:
+        return False
+    try:
+        ddd = int(phone[:2])
+    except ValueError:
+        return False
+    return 11 <= ddd <= 99 and phone[2] == "9"
 
 
 def filter_orders(orders, filters):
