@@ -143,9 +143,6 @@ const elements = {
   priority: document.querySelector("#priority"),
   status: document.querySelector("#status"),
   notes: document.querySelector("#notes"),
-  addItem: document.querySelector("#addItem"),
-  addItemTop: document.querySelector("#addItemTop"),
-  addItemBottom: document.querySelector("#addItemBottom"),
   itemsList: document.querySelector("#itemsList"),
   itemTemplate: document.querySelector("#itemTemplate"),
   cancelEdit: document.querySelector("#cancelEdit"),
@@ -243,9 +240,6 @@ async function init() {
   });
   elements.logout.addEventListener("click", logout);
   elements.form.addEventListener("submit", handleSubmit);
-  elements.addItem.addEventListener("click", () => addItemRow());
-  elements.addItemTop?.addEventListener("click", () => addItemRow());
-  elements.addItemBottom.addEventListener("click", () => addItemRow());
   elements.cancelEdit.addEventListener("click", resetForm);
   elements.exportCsv.addEventListener("click", exportCsv);
   elements.printReport.addEventListener("click", () => window.print());
