@@ -12,6 +12,7 @@ from secrets import token_hex
 from hashlib import sha256
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
+from unicodedata import category, normalize as unicode_normalize
 
 ROOT = Path(__file__).resolve().parent
 DATA_FILE = ROOT / "orders.json"
@@ -645,6 +646,7 @@ def create_management_user(payload):
         raise ValueError("Preencha nome, setor e senha padrao.")
     if len(password) < 4:
         raise ValueError("A senha padrao deve ter pelo menos 4 caracteres.")
+    validate_user_identity_link(name, phone)
     if find_user(login):
         raise ValueError("Ja existe usuario com este nome/login. Use outro nome para o cadastro.")
 
@@ -1333,6 +1335,32 @@ def db_to_user(row):
 
 def normalize(value):
     return str(value or "").strip().lower()
+
+
+def normalize_identity(value):
+    text = " ".join(str(value or "").strip().lower().split())
+    decomposed = unicode_normalize("NFD", text)
+    return "".join(ch for ch in decomposed if category(ch) != "Mn")
+
+
+def validate_user_identity_link(name, phone):
+    identity_name = normalize_identity(name)
+    identity_phone = only_digits(phone)
+    for user in read_users():
+        if user.get("role") != "collaborator":
+            continue
+        existing_name = normalize_identity(user.get("name", ""))
+        existing_phone = only_digits(user.get("phone", ""))
+        if not existing_name or not existing_phone:
+            continue
+        same_name = existing_name == identity_name
+        same_phone = existing_phone == identity_phone
+        if same_name and same_phone:
+            raise ValueError("Este colaborador ja possui cadastro. Use o acesso existente ou solicite redefinicao de senha.")
+        if same_name:
+            raise ValueError("Este nome ja esta vinculado a outro celular. Para seguranca, use o celular cadastrado ou solicite ajuste ao Master.")
+        if same_phone:
+            raise ValueError("Este celular ja esta vinculado a outro colaborador. Para seguranca, use o nome cadastrado ou solicite ajuste ao Master.")
 
 
 def only_digits(value):
