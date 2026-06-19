@@ -1735,22 +1735,47 @@ function getFilteredOrders() {
   const status = elements.filterStatus.value;
   const priority = elements.filterPriority.value;
 
-  return getVisibleOrders().filter((order) => {
-    const text = [
-      order.id,
-      order.requester,
-      order.phone,
-      order.origin,
-      order.priority,
-      order.status,
-      order.notes,
-      ...order.items.map((item) => `${item.model} ${item.size} ${item.bath}`),
-    ]
-      .join(" ")
-      .toLowerCase();
+  return getVisibleOrders()
+    .filter((order) => {
+      const currentStatus = normalizeStatus(order.status);
+      const text = [
+        order.id,
+        order.requester,
+        order.phone,
+        order.origin,
+        order.priority,
+        currentStatus,
+        order.notes,
+        ...order.items.map((item) => `${item.model} ${item.size} ${item.bath}`),
+      ]
+        .join(" ")
+        .toLowerCase();
 
-    return (!search || text.includes(search)) && (!status || order.status === status) && (!priority || order.priority === priority);
-  });
+      const hideDeliveredInDefaultList = !status && currentStatus === "Entregue";
+
+      return (
+        !hideDeliveredInDefaultList &&
+        (!search || text.includes(search)) &&
+        (!status || currentStatus === status) &&
+        (!priority || order.priority === priority)
+      );
+    })
+    .sort(orderSortByStatus);
+}
+
+function orderSortByStatus(a, b) {
+  const order = { "Pedido Recebido": 0, "Em separa\u00e7\u00e3o": 1, Entregue: 2 };
+  const statusDiff = (order[normalizeStatus(a.status)] ?? 9) - (order[normalizeStatus(b.status)] ?? 9);
+  if (statusDiff) return statusDiff;
+  return String(b.id || "").localeCompare(String(a.id || ""));
+}
+
+function statusClass(status) {
+  const currentStatus = normalizeStatus(status);
+  if (currentStatus === "Pedido Recebido") return "order-received";
+  if (currentStatus === "Em separa\u00e7\u00e3o") return "order-progress";
+  if (currentStatus === "Entregue") return "order-delivered";
+  return "";
 }
 
 function getVisibleOrders() {
@@ -1868,17 +1893,20 @@ function renderOrders() {
   elements.ordersList.innerHTML = "";
 
   if (!filtered.length) {
-    elements.ordersList.innerHTML = '<div class="empty">Nenhum pedido encontrado.</div>';
+    const status = elements.filterStatus.value;
+    elements.ordersList.innerHTML = `<div class="empty">${status ? "Nenhum pedido encontrado." : "Nenhum pedido pendente. Para ver pedidos entregues, filtre por Entregue."}</div>`;
     return;
   }
 
   filtered.forEach((order) => {
     const card = document.createElement("article");
-    card.className = "order-card";
     const displayStatus = normalizeStatus(order.status);
+    card.className = `order-card ${statusClass(displayStatus)}`;
     const totalPieces = order.items.reduce((sum, item) => sum + item.quantity, 0);
     const priorityClass = order.priority === "Urgente" ? "urgent" : "";
     const canManage = canManageOrder(order);
+    const visibleItems = order.items.slice(0, 6);
+    const hiddenItems = Math.max(0, order.items.length - visibleItems.length);
     card.innerHTML = `
       <div class="order-top">
         <strong>${order.id}</strong>
@@ -1896,7 +1924,8 @@ function renderOrders() {
         <span>${order.items.length} itens</span>
       </div>
       <ul class="order-items">
-        ${order.items.map((item) => `<li>${item.quantity}x ${item.model} \u00b7 ${item.size} \u00b7 ${item.bath}</li>`).join("")}
+        ${visibleItems.map((item) => `<li>${item.quantity}x ${item.model} \u00b7 ${item.size} \u00b7 ${item.bath}</li>`).join("")}
+        ${hiddenItems ? `<li class="more-items">+ ${hiddenItems} item(ns) no pedido</li>` : ""}
       </ul>
       <div class="order-footer">
         <label>

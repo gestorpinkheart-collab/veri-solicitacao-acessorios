@@ -937,12 +937,29 @@ select:disabled {
   padding: 16px;
   box-shadow: 0 12px 28px rgba(47, 71, 61, 0.07);
   transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+  border-left: 7px solid var(--accent);
 }
 
 .order-card:hover {
   border-color: rgba(146, 172, 160, 0.46);
   box-shadow: 0 18px 36px rgba(47, 71, 61, 0.11);
   transform: translateY(-1px);
+}
+
+.order-card.order-received {
+  border-left-color: #6f8d7f;
+  background: linear-gradient(90deg, rgba(146, 172, 160, 0.13), #fff 18%);
+}
+
+.order-card.order-progress {
+  border-left-color: #c9a24a;
+  background: linear-gradient(90deg, rgba(201, 162, 74, 0.13), #fff 18%);
+}
+
+.order-card.order-delivered {
+  border-left-color: #8ea39b;
+  background: linear-gradient(90deg, rgba(142, 163, 155, 0.1), #fff 18%);
+  opacity: 0.82;
 }
 
 .collaborator-orders-panel {
@@ -1002,6 +1019,17 @@ select:disabled {
   padding-left: 18px;
   color: #2f473d;
   font-size: 0.9rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 4px 22px;
+  max-height: 126px;
+  overflow: hidden;
+}
+
+.more-items {
+  color: var(--accent-dark);
+  font-weight: 900;
+  list-style: none;
 }
 
 .pill {
@@ -1028,6 +1056,20 @@ select:disabled {
 .status-pill {
   background: var(--accent-soft);
   color: var(--accent-dark);
+}
+
+.order-received .status-pill {
+  background: rgba(146, 172, 160, 0.22);
+}
+
+.order-progress .status-pill {
+  background: rgba(201, 162, 74, 0.2);
+  color: #5f4a10;
+}
+
+.order-delivered .status-pill {
+  background: rgba(142, 163, 155, 0.18);
+  color: #51665d;
 }
 
 .order-footer {
