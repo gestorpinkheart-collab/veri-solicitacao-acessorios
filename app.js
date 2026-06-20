@@ -2095,24 +2095,51 @@ function renderReports() {
   elements.reportBody.innerHTML = "";
 
   if (!visibleOrders.length) {
-    elements.reportBody.innerHTML = '<tr><td colspan="8">Nenhum pedido encontrado.</td></tr>';
+    elements.reportBody.innerHTML = '<tr><td colspan="5">Nenhum pedido encontrado.</td></tr>';
     return;
   }
 
   visibleOrders.forEach((order) => {
     const row = document.createElement("tr");
+    const totalPieces = countPieces([order]);
+    const itemSummary = compactReportItems(order.items);
     row.innerHTML = `
-      <td>${order.id}</td>
-      <td>${order.requester}</td>
-      <td>${formatPhone(order.phone)}</td>
-      <td>${order.origin}</td>
-      <td>${order.status}</td>
-      <td>${order.priority}</td>
-      <td>${countPieces([order])}</td>
-      <td>${order.items.map((item) => `${item.quantity}x ${item.model} ${item.size} ${item.bath}`).join("<br>")}</td>
+      <td class="protocol-id">
+        <strong>${order.id}</strong>
+        <span>${formatDate(order.requestDate)}</span>
+        <span class="pill ${order.priority === "Urgente" ? "urgent" : ""}">${order.priority}</span>
+        <span class="pill status-pill">${normalizeStatus(order.status)}</span>
+      </td>
+      <td>
+        <strong>${order.requester}</strong>
+        <span>${formatPhone(order.phone)}</span>
+        <span>${order.origin}</span>
+      </td>
+      <td>
+        <strong>${totalPieces}</strong> pe\u00e7as<br>
+        <strong>${order.items.length}</strong> item(ns)
+      </td>
+      <td class="protocol-items">${itemSummary}</td>
+      <td class="protocol-signature">
+        <span>Separado por: __________________</span>
+        <span>Entregue em: ____/____/______</span>
+        <span>Recebido por: _________________</span>
+      </td>
     `;
     elements.reportBody.append(row);
   });
+}
+
+function compactReportItems(items) {
+  const grouped = new Map();
+  (items || []).forEach((item) => {
+    const key = `${item.model} ${item.size} ${item.bath}`;
+    grouped.set(key, (grouped.get(key) || 0) + Number(item.quantity || 0));
+  });
+  const lines = [...grouped.entries()].map(([label, quantity]) => `${quantity}x ${label}`);
+  const visibleLines = lines.slice(0, 6);
+  const hidden = Math.max(0, lines.length - visibleLines.length);
+  return `${visibleLines.join("<br>")}${hidden ? `<br><strong>+ ${hidden} item(ns)</strong>` : ""}`;
 }
 
 function getReportOrders() {
