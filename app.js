@@ -200,6 +200,8 @@ const elements = {
   masterCostBody: document.querySelector("#masterCostBody"),
   refreshUsers: document.querySelector("#refreshUsers"),
   managementUserForm: document.querySelector("#managementUserForm"),
+  managementUserRole: document.querySelector("#managementUserRole"),
+  managementUserLogin: document.querySelector("#managementUserLogin"),
   managementUserName: document.querySelector("#managementUserName"),
   managementUserSector: document.querySelector("#managementUserSector"),
   managementUserPassword: document.querySelector("#managementUserPassword"),
@@ -1689,6 +1691,7 @@ function accessEventLabel(eventType) {
     alerta_nome_celular: "Nome diferente no celular",
     senha_provisoria: "Senha provis\u00f3ria",
     usuario_gestao_criado: "Usu\u00e1rio Gest\u00e3o criado",
+    usuario_admin_criado: "Usu\u00e1rio administrativo criado",
   };
   return labels[eventType] || eventType || "Login";
 }
@@ -1785,6 +1788,8 @@ async function handleManagementUserSubmit(event) {
   event.preventDefault();
   if (!isMasterUser() || !masterCredential) return;
 
+  const role = elements.managementUserRole.value;
+  const login = elements.managementUserLogin.value.trim();
   const name = elements.managementUserName.value.trim();
   const sector = elements.managementUserSector.value.trim();
   const password = elements.managementUserPassword.value.trim();
@@ -1805,6 +1810,8 @@ async function handleManagementUserSubmit(event) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         master: masterCredential,
+        role,
+        login,
         name,
         sector,
         password,
@@ -1815,7 +1822,7 @@ async function handleManagementUserSubmit(event) {
     elements.managementUserForm.reset();
     masterUsers = [payload.user, ...masterUsers.filter((item) => item.login !== payload.user.login)];
     renderMasterUsers();
-    alert("Usu\u00e1rio de Gest\u00e3o criado. No primeiro acesso, ele dever\u00e1 trocar a senha.");
+    alert("Usu\u00e1rio criado. No primeiro acesso, ele dever\u00e1 trocar a senha.");
   } catch (error) {
     alert(error.message);
   }

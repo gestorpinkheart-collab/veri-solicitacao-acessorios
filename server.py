@@ -688,13 +688,15 @@ def create_management_user(payload):
     name = str(payload.get("name", "")).strip()
     sector = str(payload.get("sector", "")).strip()
     password = str(payload.get("password", ""))
+    role = str(payload.get("role", "consultant")).strip() or "consultant"
     login = str(payload.get("login", "")).strip() or name
 
     if not name or not sector or not password:
         raise ValueError("Preencha nome, setor e senha padrao.")
+    if role not in ("consultant", "master"):
+        raise ValueError("Perfil administrativo invalido.")
     if len(password) < 4:
         raise ValueError("A senha padrao deve ter pelo menos 4 caracteres.")
-    validate_user_identity_link(name, phone)
     if find_user(login):
         raise ValueError("Ja existe usuario com este nome/login. Use outro nome para o cadastro.")
 
@@ -703,7 +705,7 @@ def create_management_user(payload):
     user = {
         "login": login,
         "name": name,
-        "role": "consultant",
+        "role": role,
         "phone": "",
         "origin": sector,
         "passwordHash": hash_password(password, salt),
@@ -717,8 +719,8 @@ def create_management_user(payload):
         "userName": master_user.get("name", "Master"),
         "login": master_user.get("login", ""),
         "role": "master",
-        "eventType": "usuario_gestao_criado",
-        "details": {"targetLogin": login, "sector": sector},
+        "eventType": "usuario_admin_criado",
+        "details": {"targetLogin": login, "sector": sector, "role": role},
     })
     return public_user(user)
 
@@ -1537,6 +1539,7 @@ def column_name(index):
 
 if __name__ == "__main__":
     port = int(environ.get("PORT", "4174"))
+    ensure_default_users()
     server = ThreadingHTTPServer(("0.0.0.0", port), RequestHandler)
     print(f"Sistema disponível em http://0.0.0.0:{port}/index.html")
     server.serve_forever()

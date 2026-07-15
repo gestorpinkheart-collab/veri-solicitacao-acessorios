@@ -570,6 +570,17 @@
               <p class="subtle-text">Senhas n&atilde;o ficam vis&iacute;veis. Ao redefinir uma senha, o usu&aacute;rio ser&aacute; obrigado a trocar no pr&oacute;ximo acesso.</p>
               <form id="managementUserForm" class="price-form compact-user-form">
                 <label>
+                  Perfil
+                  <select id="managementUserRole" required>
+                    <option value="consultant">Gest&atilde;o de Pedidos</option>
+                    <option value="master">Master</option>
+                  </select>
+                </label>
+                <label>
+                  Login
+                  <input id="managementUserLogin" type="text" placeholder="Ex.: Willians.Jorge">
+                </label>
+                <label>
                   Nome
                   <input id="managementUserName" type="text" placeholder="Nome do usu&aacute;rio" required>
                 </label>
@@ -581,7 +592,7 @@
                   Senha padr&atilde;o
                   <input id="managementUserPassword" type="password" minlength="4" placeholder="Senha provis&oacute;ria" autocomplete="new-password" required>
                 </label>
-                <button class="primary-button" type="submit">Criar gest&atilde;o</button>
+                <button class="primary-button" type="submit">Criar usu&aacute;rio</button>
               </form>
               <div class="table-wrap compact-table">
                 <table class="report-table">
@@ -721,6 +732,6 @@
       </div>
     </template>
 
-    <script src="app.js?v=20260715-master-willians" charset="utf-8"></script>
+    <script src="app.js?v=20260715-admin-create-master" charset="utf-8"></script>
   </body>
 </html>
