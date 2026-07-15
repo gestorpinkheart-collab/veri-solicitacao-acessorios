@@ -7,6 +7,7 @@ const API_PRICES_URL = "/api/prices";
 const API_COST_SETTINGS_URL = "/api/cost-settings";
 const defaultUsers = [
   { login: "Charles Marinho", password: "12345", name: "Charles Marinho", role: "master", mustChangePassword: true },
+  { login: "Willians.Jorge", password: "12345", name: "Willians Jorge", role: "master", mustChangePassword: true },
   { login: "Juliano", password: "12345", name: "Juliano", role: "consultant", mustChangePassword: true },
 ];
 

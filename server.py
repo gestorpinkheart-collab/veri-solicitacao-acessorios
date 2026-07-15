@@ -45,6 +45,7 @@ SUPABASE_USERS_TABLE = environ.get("SUPABASE_USERS_TABLE", "accessory_users")
 
 DEFAULT_USERS = [
     {"login": "Charles Marinho", "password": "12345", "name": "Charles Marinho", "role": "master", "mustChangePassword": True},
+    {"login": "Willians.Jorge", "password": "12345", "name": "Willians Jorge", "role": "master", "mustChangePassword": True},
     {"login": "Juliano", "password": "12345", "name": "Juliano", "role": "consultant", "mustChangePassword": True},
 ]
 
