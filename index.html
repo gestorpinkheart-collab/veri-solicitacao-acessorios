@@ -424,6 +424,7 @@
               <button class="master-tab" type="button" data-master-tab="masterBathCosts">Custos de banho</button>
               <button class="master-tab" type="button" data-master-tab="masterPieceCosts">Valores das peças</button>
               <button class="master-tab" type="button" data-master-tab="masterUsers">Usu&aacute;rios</button>
+              <button class="master-tab" type="button" data-master-tab="masterDatabase">Base de dados</button>
               <button class="master-tab" type="button" data-master-tab="masterSystemLogs">Registros</button>
             </div>
           </section>
@@ -603,6 +604,46 @@
             </div>
           </section>
 
+          <section id="masterDatabase" class="master-pane">
+            <div class="management-panel">
+              <div class="panel-title-row">
+                <div>
+                  <p class="eyebrow">Administra&ccedil;&atilde;o</p>
+                  <h2>Controle da base de dados</h2>
+                </div>
+                <div class="report-actions">
+                  <button class="ghost-button small" id="refreshDatabase" type="button">Atualizar</button>
+                  <button class="primary-button small" id="exportDatabase" type="button">Exportar JSON</button>
+                </div>
+              </div>
+              <p class="subtle-text">Acesso Master consolidado para auditoria. Senhas e hashes n&atilde;o s&atilde;o exibidos.</p>
+              <div class="report-summary database-summary">
+                <span><strong id="databaseOrdersCount">0</strong> pedidos</span>
+                <span><strong id="databaseUsersCount">0</strong> usu&aacute;rios</span>
+                <span><strong id="databasePricesCount">0</strong> pre&ccedil;os</span>
+                <span><strong id="databaseLogsCount">0</strong> logs</span>
+              </div>
+              <div class="filters">
+                <label>
+                  Tabela
+                  <select id="databaseTableSelect">
+                    <option value="orders">Pedidos</option>
+                    <option value="users">Usu&aacute;rios</option>
+                    <option value="prices">Pre&ccedil;os</option>
+                    <option value="accessLogs">Logs de acesso</option>
+                    <option value="costSettings">Par&acirc;metros de custo</option>
+                  </select>
+                </label>
+              </div>
+              <div class="table-wrap compact-table">
+                <table class="report-table">
+                  <thead id="databasePreviewHead"></thead>
+                  <tbody id="databasePreviewBody"></tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
           <section id="masterSystemLogs" class="master-pane">
             <div class="management-panel">
               <div class="panel-title-row">
@@ -680,6 +721,6 @@
       </div>
     </template>
 
-    <script src="app.js?v=20260620-protocolo-entrega" charset="utf-8"></script>
+    <script src="app.js?v=20260715-admin-database" charset="utf-8"></script>
   </body>
 </html>

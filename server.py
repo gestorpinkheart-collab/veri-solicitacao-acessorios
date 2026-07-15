@@ -258,6 +258,22 @@ class RequestHandler(SimpleHTTPRequestHandler):
                 self.send_json({"ok": False, "error": str(exc)}, status=503)
             return
 
+        if self.path == "/api/admin/database":
+            try:
+                payload = self.read_json_body()
+            except ValueError:
+                self.send_error(400, "JSON invalido")
+                return
+
+            try:
+                database = read_admin_database(payload)
+                self.send_json({"ok": True, "database": database})
+            except ValueError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=403)
+            except StorageError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=503)
+            return
+
         if self.path == "/api/users":
             try:
                 payload = self.read_json_body()
@@ -601,6 +617,37 @@ def authenticate_master(payload):
 def list_users_for_master(payload):
     authenticate_master(payload)
     return [public_user(user) for user in read_users()]
+
+
+def read_admin_database(payload):
+    authenticate_master(payload)
+    orders = read_orders()
+    return {
+        "generatedAt": datetime.now().isoformat(),
+        "storage": "supabase" if supabase_enabled() else "local",
+        "orders": [admin_order_summary(order) for order in orders],
+        "users": [public_user(user) for user in read_users()],
+        "prices": read_prices(),
+        "costSettings": read_cost_settings(),
+        "accessLogs": read_access_logs(),
+    }
+
+
+def admin_order_summary(order):
+    items = order.get("items") if isinstance(order.get("items"), list) else []
+    pieces = sum(parse_int(item.get("quantity", 0)) for item in items if isinstance(item, dict))
+    return {
+        **order,
+        "itemsCount": len(items),
+        "pieces": pieces,
+    }
+
+
+def parse_int(value):
+    try:
+        return int(float(value or 0))
+    except (TypeError, ValueError):
+        return 0
 
 
 def admin_reset_user_password(payload):

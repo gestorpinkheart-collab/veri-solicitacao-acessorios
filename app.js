@@ -91,6 +91,7 @@ let apiAvailable = false;
 let users = loadUsers();
 let masterUsers = [];
 let masterCredential = null;
+let masterDatabase = null;
 let pendingUser = null;
 let isSubmittingOrder = false;
 let activeLoginMode = "common";
@@ -202,6 +203,15 @@ const elements = {
   managementUserSector: document.querySelector("#managementUserSector"),
   managementUserPassword: document.querySelector("#managementUserPassword"),
   masterUsersBody: document.querySelector("#masterUsersBody"),
+  refreshDatabase: document.querySelector("#refreshDatabase"),
+  exportDatabase: document.querySelector("#exportDatabase"),
+  databaseTableSelect: document.querySelector("#databaseTableSelect"),
+  databaseOrdersCount: document.querySelector("#databaseOrdersCount"),
+  databaseUsersCount: document.querySelector("#databaseUsersCount"),
+  databasePricesCount: document.querySelector("#databasePricesCount"),
+  databaseLogsCount: document.querySelector("#databaseLogsCount"),
+  databasePreviewHead: document.querySelector("#databasePreviewHead"),
+  databasePreviewBody: document.querySelector("#databasePreviewBody"),
   accessLogsBody: document.querySelector("#accessLogsBody"),
   orderHistoryBody: document.querySelector("#orderHistoryBody"),
   costSettingsForm: document.querySelector("#costSettingsForm"),
@@ -264,6 +274,9 @@ async function init() {
   elements.refreshMasterData?.addEventListener("click", loadMasterData);
   elements.refreshUsers?.addEventListener("click", loadMasterUsers);
   elements.managementUserForm?.addEventListener("submit", handleManagementUserSubmit);
+  elements.refreshDatabase?.addEventListener("click", loadMasterDatabase);
+  elements.exportDatabase?.addEventListener("click", exportMasterDatabase);
+  elements.databaseTableSelect?.addEventListener("change", renderDatabasePreview);
   elements.masterTabButtons.forEach((button) => {
     button.addEventListener("click", () => showMasterTab(button.dataset.masterTab));
   });
@@ -671,6 +684,7 @@ function logout() {
   currentSession = null;
   masterCredential = null;
   masterUsers = [];
+  masterDatabase = null;
   elements.loginError.textContent = "";
   elements.masterPassword.value = "";
   if (elements.loginPhone) elements.loginPhone.value = "";
@@ -972,6 +986,131 @@ async function loadMasterUsers(shouldRender = true) {
       elements.masterUsersBody.innerHTML = `<tr><td colspan="9">${error.message}</td></tr>`;
     }
   }
+}
+
+async function loadMasterDatabase() {
+  if (!isMasterUser() || !masterCredential) {
+    renderDatabaseAccessMessage("Entre novamente como Master para acessar a base de dados.");
+    return;
+  }
+
+  try {
+    const response = await fetch("/api/admin/database", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ master: masterCredential }),
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.error || "N\u00e3o foi poss\u00edvel carregar a base de dados.");
+    masterDatabase = payload.database;
+    renderDatabaseSummary();
+    renderDatabasePreview();
+  } catch (error) {
+    masterDatabase = null;
+    renderDatabaseAccessMessage(error.message);
+  }
+}
+
+function renderDatabaseAccessMessage(message) {
+  if (elements.databasePreviewHead) elements.databasePreviewHead.innerHTML = "";
+  if (elements.databasePreviewBody) elements.databasePreviewBody.innerHTML = `<tr><td>${message}</td></tr>`;
+}
+
+function renderDatabaseSummary() {
+  if (!elements.databaseOrdersCount) return;
+  elements.databaseOrdersCount.textContent = masterDatabase?.orders?.length || 0;
+  elements.databaseUsersCount.textContent = masterDatabase?.users?.length || 0;
+  elements.databasePricesCount.textContent = masterDatabase?.prices?.length || 0;
+  elements.databaseLogsCount.textContent = masterDatabase?.accessLogs?.length || 0;
+}
+
+function renderDatabasePreview() {
+  if (!elements.databasePreviewHead || !elements.databasePreviewBody) return;
+  if (!masterDatabase) {
+    renderDatabaseAccessMessage("Clique em Atualizar para carregar a base de dados.");
+    return;
+  }
+
+  const table = elements.databaseTableSelect?.value || "orders";
+  const rows = databaseRows(table).slice(0, 80);
+  const columns = databaseColumns(table);
+  elements.databasePreviewHead.innerHTML = `<tr>${columns.map((column) => `<th>${column.label}</th>`).join("")}</tr>`;
+  elements.databasePreviewBody.innerHTML = "";
+
+  if (!rows.length) {
+    elements.databasePreviewBody.innerHTML = `<tr><td colspan="${columns.length}">Nenhum registro encontrado.</td></tr>`;
+    return;
+  }
+
+  rows.forEach((row) => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = columns.map((column) => `<td>${formatDatabaseValue(row[column.key])}</td>`).join("");
+    elements.databasePreviewBody.append(tr);
+  });
+}
+
+function databaseRows(table) {
+  if (table === "costSettings") return [masterDatabase?.costSettings || {}];
+  return Array.isArray(masterDatabase?.[table]) ? masterDatabase[table] : [];
+}
+
+function databaseColumns(table) {
+  const columns = {
+    orders: [
+      { key: "id", label: "Pedido" },
+      { key: "requestDate", label: "Data" },
+      { key: "requester", label: "Solicitante" },
+      { key: "origin", label: "Loja" },
+      { key: "status", label: "Status" },
+      { key: "itemsCount", label: "Itens" },
+      { key: "pieces", label: "Pe\u00e7as" },
+    ],
+    users: [
+      { key: "login", label: "Login" },
+      { key: "name", label: "Nome" },
+      { key: "role", label: "Perfil" },
+      { key: "origin", label: "Origem" },
+      { key: "phone", label: "Celular" },
+      { key: "mustChangePassword", label: "Troca senha" },
+    ],
+    prices: [
+      { key: "model", label: "Modelo" },
+      { key: "size", label: "Tamanho" },
+      { key: "bath", label: "Tipo" },
+      { key: "unitCost", label: "Custo" },
+      { key: "weight", label: "Peso" },
+    ],
+    accessLogs: [
+      { key: "createdAt", label: "Data/Hora" },
+      { key: "userName", label: "Usu\u00e1rio" },
+      { key: "login", label: "Login" },
+      { key: "role", label: "Perfil" },
+      { key: "eventType", label: "Evento" },
+    ],
+    costSettings: [
+      { key: "goldValue", label: "Ouro" },
+      { key: "rhodiumValue", label: "R\u00f3dio" },
+      { key: "rhodiumFactor", label: "Fator R\u00f3dio" },
+    ],
+  };
+  return columns[table] || columns.orders;
+}
+
+function formatDatabaseValue(value) {
+  if (Array.isArray(value)) return `${value.length} registro(s)`;
+  if (value && typeof value === "object") return JSON.stringify(value);
+  if (typeof value === "boolean") return value ? "Sim" : "N\u00e3o";
+  return value ?? "";
+}
+
+function exportMasterDatabase() {
+  if (!masterDatabase) {
+    alert("Carregue a base de dados antes de exportar.");
+    return;
+  }
+  const blob = new Blob([JSON.stringify(masterDatabase, null, 2)], { type: "application/json;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  downloadUrl(url, `veri-base-dados-${todayIso}.json`, true);
 }
 
 async function loadCostData() {
@@ -1434,6 +1573,8 @@ function renderMasterPanel() {
   renderAccessLogs();
   renderOrderHistory(historyRows);
   renderMasterUsers();
+  renderDatabaseSummary();
+  renderDatabasePreview();
   renderPrices();
 }
 
