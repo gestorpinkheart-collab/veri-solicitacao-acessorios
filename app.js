@@ -168,6 +168,7 @@ const elements = {
   reportFilterPriority: document.querySelector("#reportFilterPriority"),
   ordersList: document.querySelector("#ordersList"),
   collaboratorOrdersList: document.querySelector("#collaboratorOrdersList"),
+  collaboratorOrderDetail: document.querySelector("#collaboratorOrderDetail"),
   refreshMyOrders: document.querySelector("#refreshMyOrders"),
   orderCount: document.querySelector("#orderCount"),
   statusChart: document.querySelector("#statusChart"),
@@ -2117,16 +2118,22 @@ function renderCollaboratorOrders() {
 
   if (!myOrders.length) {
     elements.collaboratorOrdersList.innerHTML = '<div class="empty">Nenhum pedido enviado por este celular.</div>';
+    if (elements.collaboratorOrderDetail) {
+      elements.collaboratorOrderDetail.hidden = true;
+      elements.collaboratorOrderDetail.innerHTML = "";
+    }
     return;
   }
 
   myOrders.forEach((order) => {
     const card = document.createElement("article");
-    card.className = "order-card compact-order-card";
     const displayStatus = normalizeStatus(order.status);
+    card.className = `order-card compact-order-card ${statusClass(displayStatus)}`;
     const totalPieces = countPieces([order]);
     const priorityClass = order.priority === "Urgente" ? "urgent" : "";
     const canEdit = canManageOrder(order);
+    const visibleItems = order.items.slice(0, 4);
+    const hiddenItems = Math.max(0, order.items.length - visibleItems.length);
     card.innerHTML = `
       <div class="order-top">
         <strong>${order.id}</strong>
@@ -2142,11 +2149,17 @@ function renderCollaboratorOrders() {
         <span>${order.items.length} itens</span>
       </div>
       <ul class="order-items">
-        ${order.items.map((item) => `<li>${item.quantity}x ${item.model} \u00b7 ${item.size} \u00b7 ${item.bath}</li>`).join("")}
+        ${visibleItems.map((item) => `<li>${item.quantity}x ${item.model} \u00b7 ${item.size} \u00b7 ${item.bath}</li>`).join("")}
+        ${hiddenItems ? `<li class="more-items">+ ${hiddenItems} item(ns). Clique para listar.</li>` : ""}
       </ul>
       <div class="order-footer collaborator-order-footer">
         <span class="status-note">${statusHelperText(displayStatus)}</span>
         <div class="order-actions">
+          <button class="action-button" type="button" data-view-order="${order.id}" title="Visualizar pedido" aria-label="Visualizar pedido">
+            <svg viewBox="0 0 24 24" focusable="false">
+              <path d="M12 5c5 0 8.5 4.5 9.7 6.4.2.4.2.8 0 1.2C20.5 14.5 17 19 12 19s-8.5-4.5-9.7-6.4a1.2 1.2 0 0 1 0-1.2C3.5 9.5 7 5 12 5Zm0 2c-3.5 0-6.2 2.8-7.6 5 1.4 2.2 4.1 5 7.6 5s6.2-2.8 7.6-5C18.2 9.8 15.5 7 12 7Zm0 2.2A2.8 2.8 0 1 1 12 14.8 2.8 2.8 0 0 1 12 9.2Z"/>
+            </svg>
+          </button>
           ${canEdit ? `<button class="action-button" type="button" data-edit="${order.id}" title="Editar pedido" aria-label="Editar pedido">
             <svg viewBox="0 0 24 24" focusable="false">
               <path d="m4 16.6-.7 4.1 4.1-.7L18.8 8.6l-3.4-3.4L4 16.6Zm16.1-9.3 1-1a2 2 0 0 0 0-2.8l-.6-.6a2 2 0 0 0-2.8 0l-1 1 3.4 3.4Z"/>
@@ -2160,10 +2173,135 @@ function renderCollaboratorOrders() {
         </div>
       </div>
     `;
+    card.addEventListener("click", (event) => {
+      if (event.target.closest("button")) return;
+      showCollaboratorOrderDetail(order.id);
+    });
+    card.querySelector("[data-view-order]")?.addEventListener("click", () => showCollaboratorOrderDetail(order.id));
     card.querySelector("[data-edit]")?.addEventListener("click", () => editOrder(order.id));
     card.querySelector("[data-clone]").addEventListener("click", () => cloneOrder(order.id));
     elements.collaboratorOrdersList.append(card);
   });
+}
+
+function showCollaboratorOrderDetail(id) {
+  if (!elements.collaboratorOrderDetail) return;
+  const order = getVisibleOrders().find((item) => item.id === id);
+  if (!order) return;
+  const displayStatus = normalizeStatus(order.status);
+  const totalPieces = countPieces([order]);
+  elements.collaboratorOrderDetail.hidden = false;
+  elements.collaboratorOrderDetail.innerHTML = `
+    <div class="panel-title-row">
+      <div>
+        <p class="eyebrow">Pedido selecionado</p>
+        <h2>${order.id}</h2>
+      </div>
+      <div class="report-actions">
+        <button class="ghost-button small" type="button" data-detail-clone="${order.id}">Clonar pedido</button>
+        <button class="primary-button small" type="button" data-detail-print="${order.id}">Imprimir</button>
+      </div>
+    </div>
+    <div class="detail-summary">
+      <span><strong>Status</strong>${displayStatus}</span>
+      <span><strong>Data</strong>${formatDate(order.requestDate)}</span>
+      <span><strong>Loja</strong>${order.origin}</span>
+      <span><strong>Prioridade</strong>${order.priority}</span>
+      <span><strong>Pe\u00e7as</strong>${totalPieces}</span>
+      <span><strong>Itens</strong>${order.items.length}</span>
+    </div>
+    <div class="table-wrap compact-table">
+      <table class="report-table">
+        <thead>
+          <tr>
+            <th>Qtd.</th>
+            <th>Modelo</th>
+            <th>Tamanho</th>
+            <th>Banho</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${order.items.map((item) => `
+            <tr>
+              <td>${item.quantity}</td>
+              <td>${item.model}</td>
+              <td>${item.size}</td>
+              <td>${item.bath}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+    ${order.notes ? `<p class="detail-notes"><strong>Observa\u00e7\u00f5es:</strong> ${order.notes}</p>` : ""}
+  `;
+  elements.collaboratorOrderDetail.querySelector("[data-detail-clone]")?.addEventListener("click", () => cloneOrder(order.id));
+  elements.collaboratorOrderDetail.querySelector("[data-detail-print]")?.addEventListener("click", () => printCollaboratorOrder(order.id));
+  elements.collaboratorOrderDetail.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function printCollaboratorOrder(id) {
+  const order = getVisibleOrders().find((item) => item.id === id);
+  if (!order) return;
+  const totalPieces = countPieces([order]);
+  const html = `
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <title>${order.id}</title>
+        <style>
+          body { font-family: Arial, sans-serif; color: #1d2b26; margin: 24px; }
+          .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #92ACA0; padding-bottom: 12px; margin-bottom: 16px; }
+          h1 { font-size: 20px; margin: 0 0 6px; }
+          p { margin: 4px 0; }
+          .meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0; }
+          .meta span { border: 1px solid #d5e0db; border-radius: 8px; padding: 8px; }
+          table { width: 100%; border-collapse: collapse; font-size: 12px; }
+          th, td { border-bottom: 1px solid #d5e0db; padding: 8px; text-align: left; }
+          th { background: #edf3f0; }
+          .sign { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; margin-top: 34px; }
+          .line { border-top: 1px solid #1d2b26; padding-top: 6px; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div>
+            <h1>Pedido ${order.id}</h1>
+            <p>Protocolo de consulta e reemiss\u00e3o</p>
+          </div>
+          <strong>VERI</strong>
+        </div>
+        <div class="meta">
+          <span><strong>Status</strong><br>${normalizeStatus(order.status)}</span>
+          <span><strong>Data</strong><br>${formatDate(order.requestDate)}</span>
+          <span><strong>Loja</strong><br>${order.origin}</span>
+          <span><strong>Solicitante</strong><br>${order.requester}</span>
+          <span><strong>Pe\u00e7as</strong><br>${totalPieces}</span>
+          <span><strong>Itens</strong><br>${order.items.length}</span>
+        </div>
+        <table>
+          <thead><tr><th>Qtd.</th><th>Modelo</th><th>Tamanho</th><th>Banho</th></tr></thead>
+          <tbody>
+            ${order.items.map((item) => `<tr><td>${item.quantity}</td><td>${item.model}</td><td>${item.size}</td><td>${item.bath}</td></tr>`).join("")}
+          </tbody>
+        </table>
+        ${order.notes ? `<p><strong>Observa\u00e7\u00f5es:</strong> ${order.notes}</p>` : ""}
+        <div class="sign">
+          <div class="line">Solicitante</div>
+          <div class="line">Confer\u00eancia</div>
+        </div>
+      </body>
+    </html>
+  `;
+  const printWindow = window.open("", "_blank");
+  if (!printWindow) {
+    alert("N\u00e3o foi poss\u00edvel abrir a impress\u00e3o. Verifique se o navegador bloqueou pop-ups.");
+    return;
+  }
+  printWindow.document.write(html);
+  printWindow.document.close();
+  printWindow.focus();
+  printWindow.print();
 }
 
 function statusHelperText(status) {

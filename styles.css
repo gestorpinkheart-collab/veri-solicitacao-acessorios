@@ -977,10 +977,49 @@ select:disabled {
 
 .compact-order-card {
   background: rgba(255, 255, 255, 0.86);
+  cursor: pointer;
 }
 
 .collaborator-order-footer {
   margin-top: 12px;
+}
+
+.collaborator-order-detail {
+  margin-top: 18px;
+  padding: 18px;
+  border: 1px solid rgba(146, 172, 160, 0.42);
+  border-left: 8px solid var(--accent);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 18px 42px rgba(47, 71, 61, 0.1);
+}
+
+.detail-summary {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0;
+}
+
+.detail-summary span {
+  display: grid;
+  gap: 3px;
+  padding: 10px;
+  border-radius: 8px;
+  background: rgba(146, 172, 160, 0.12);
+  color: var(--accent-dark);
+  font-weight: 800;
+}
+
+.detail-summary strong {
+  color: var(--muted);
+  font-size: 0.74rem;
+  text-transform: uppercase;
+}
+
+.detail-notes {
+  margin: 12px 0 0;
+  color: var(--text);
 }
 
 .status-note {
@@ -1294,6 +1333,7 @@ select:disabled {
   .profile-cards,
   .price-form,
   .field-grid,
+  .detail-summary,
   .item-row,
   .metrics-grid,
   .dashboard-grid {
