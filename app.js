@@ -167,6 +167,7 @@ const elements = {
   reportFilterStatus: document.querySelector("#reportFilterStatus"),
   reportFilterPriority: document.querySelector("#reportFilterPriority"),
   ordersList: document.querySelector("#ordersList"),
+  managementOrderDetail: document.querySelector("#managementOrderDetail"),
   collaboratorOrdersList: document.querySelector("#collaboratorOrdersList"),
   collaboratorOrderDetail: document.querySelector("#collaboratorOrderDetail"),
   refreshMyOrders: document.querySelector("#refreshMyOrders"),
@@ -2085,6 +2086,11 @@ function renderOrders() {
           </select>
         </label>
         <div class="order-actions" aria-label="A\u00e7\u00f5es do pedido">
+          <button class="action-button" type="button" data-view-order="${order.id}" title="Visualizar pedido" aria-label="Visualizar pedido">
+            <svg viewBox="0 0 24 24" focusable="false">
+              <path d="M12 5c5 0 8.5 4.5 9.7 6.4.2.4.2.8 0 1.2C20.5 14.5 17 19 12 19s-8.5-4.5-9.7-6.4a1.2 1.2 0 0 1 0-1.2C3.5 9.5 7 5 12 5Zm0 2c-3.5 0-6.2 2.8-7.6 5 1.4 2.2 4.1 5 7.6 5s6.2-2.8 7.6-5C18.2 9.8 15.5 7 12 7Zm0 2.2A2.8 2.8 0 1 1 12 14.8 2.8 2.8 0 0 1 12 9.2Z"/>
+            </svg>
+          </button>
           ${canManage ? `<button class="action-button" type="button" data-edit="${order.id}" title="Editar" aria-label="Editar pedido">
             <svg viewBox="0 0 24 24" focusable="false">
               <path d="m4 16.6-.7 4.1 4.1-.7L18.8 8.6l-3.4-3.4L4 16.6Zm16.1-9.3 1-1a2 2 0 0 0 0-2.8l-.6-.6a2 2 0 0 0-2.8 0l-1 1 3.4 3.4Z"/>
@@ -2105,6 +2111,11 @@ function renderOrders() {
     `;
 
     card.querySelector("[data-order-status]").addEventListener("change", (event) => updateStatus(order.id, event.target.value));
+    card.addEventListener("click", (event) => {
+      if (event.target.closest("button, a, select, label")) return;
+      showManagementOrderDetail(order.id);
+    });
+    card.querySelector("[data-view-order]")?.addEventListener("click", () => showManagementOrderDetail(order.id));
     card.querySelector("[data-edit]")?.addEventListener("click", () => editOrder(order.id));
     card.querySelector("[data-delete]")?.addEventListener("click", () => deleteOrder(order.id));
     elements.ordersList.append(card);
@@ -2182,6 +2193,62 @@ function renderCollaboratorOrders() {
     card.querySelector("[data-clone]").addEventListener("click", () => cloneOrder(order.id));
     elements.collaboratorOrdersList.append(card);
   });
+}
+
+function showManagementOrderDetail(id) {
+  if (!elements.managementOrderDetail) return;
+  const order = getVisibleOrders().find((item) => item.id === id);
+  if (!order) return;
+  const displayStatus = normalizeStatus(order.status);
+  const totalPieces = countPieces([order]);
+  elements.managementOrderDetail.hidden = false;
+  elements.managementOrderDetail.innerHTML = `
+    <div class="panel-title-row">
+      <div>
+        <p class="eyebrow">Pedido selecionado</p>
+        <h2>${order.id}</h2>
+      </div>
+      <div class="report-actions">
+        <button class="ghost-button small" type="button" data-management-edit="${order.id}">Editar</button>
+        ${order.phone ? `<a class="ghost-button small" href="${whatsappUrl(order)}" target="_blank" rel="noopener noreferrer">WhatsApp</a>` : ""}
+        <button class="primary-button small" type="button" data-management-print="${order.id}">Imprimir</button>
+      </div>
+    </div>
+    <div class="detail-summary">
+      <span><strong>Status</strong>${displayStatus}</span>
+      <span><strong>Data</strong>${formatDate(order.requestDate)}</span>
+      <span><strong>Solicitante</strong>${order.requester}</span>
+      <span><strong>Loja</strong>${order.origin}</span>
+      <span><strong>Pe\u00e7as</strong>${totalPieces}</span>
+      <span><strong>Itens</strong>${order.items.length}</span>
+    </div>
+    <div class="table-wrap compact-table">
+      <table class="report-table">
+        <thead>
+          <tr>
+            <th>Qtd.</th>
+            <th>Modelo</th>
+            <th>Tamanho</th>
+            <th>Banho</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${order.items.map((item) => `
+            <tr>
+              <td>${item.quantity}</td>
+              <td>${item.model}</td>
+              <td>${item.size}</td>
+              <td>${item.bath}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+    </div>
+    ${order.notes ? `<p class="detail-notes"><strong>Observa\u00e7\u00f5es:</strong> ${order.notes}</p>` : ""}
+  `;
+  elements.managementOrderDetail.querySelector("[data-management-edit]")?.addEventListener("click", () => editOrder(order.id));
+  elements.managementOrderDetail.querySelector("[data-management-print]")?.addEventListener("click", () => printCollaboratorOrder(order.id));
+  elements.managementOrderDetail.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function showCollaboratorOrderDetail(id) {
@@ -2267,7 +2334,7 @@ function printCollaboratorOrder(id) {
         <div class="header">
           <div>
             <h1>Pedido ${order.id}</h1>
-            <p>Protocolo de consulta e reemiss\u00e3o</p>
+            <p>Protocolo de pedido para consulta, confer\u00eancia e impress\u00e3o</p>
           </div>
           <strong>VERI</strong>
         </div>
