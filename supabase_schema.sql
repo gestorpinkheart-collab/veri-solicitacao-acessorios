@@ -5,7 +5,16 @@ create table if not exists public.accessory_orders (
   phone text,
   origin text not null,
   priority text not null check (priority in ('Normal', 'Urgente')),
-  status text not null check (status in ('Pedido Recebido', 'Em separação', 'Entregue')),
+  status text not null check (
+    status in (
+      'Pedido Recebido',
+      'Em separação',
+      'Em preparação de banho (galvanoplastia)',
+      'Pós banho',
+      'Preparação final',
+      'Entregue'
+    )
+  ),
   notes text default '',
   items jsonb not null default '[]'::jsonb,
   history jsonb not null default '[]'::jsonb,
@@ -15,6 +24,18 @@ create table if not exists public.accessory_orders (
 
 alter table public.accessory_orders
 add column if not exists history jsonb not null default '[]'::jsonb;
+
+alter table public.accessory_orders drop constraint if exists accessory_orders_status_check;
+alter table public.accessory_orders add constraint accessory_orders_status_check check (
+  status in (
+    'Pedido Recebido',
+    'Em separação',
+    'Em preparação de banho (galvanoplastia)',
+    'Pós banho',
+    'Preparação final',
+    'Entregue'
+  )
+);
 
 create index if not exists accessory_orders_phone_idx on public.accessory_orders (phone);
 create index if not exists accessory_orders_status_idx on public.accessory_orders (status);

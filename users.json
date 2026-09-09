@@ -1,0 +1,32 @@
+[
+  {
+    "login": "Charles Marinho",
+    "name": "Charles Marinho",
+    "role": "master",
+    "passwordHash": "7dc97792949fb54183a81ed1002e552688e070aaeefaebe16429e2d6e9669856",
+    "passwordSalt": "9947bfdf7aebf849",
+    "mustChangePassword": true,
+    "createdAt": "2026-09-09T13:03:13.968566",
+    "updatedAt": "2026-09-09T13:03:13.968566"
+  },
+  {
+    "login": "Willians.Jorge",
+    "name": "Willians Jorge",
+    "role": "master",
+    "passwordHash": "c73fa1dc1e9a4e3fdf1c08c19b4d2ab743c2b3294afc57c059c0b19350135687",
+    "passwordSalt": "7e3dd3bd4eeab20c",
+    "mustChangePassword": true,
+    "createdAt": "2026-09-09T13:03:13.993542",
+    "updatedAt": "2026-09-09T13:03:13.993542"
+  },
+  {
+    "login": "Juliano",
+    "name": "Juliano",
+    "role": "consultant",
+    "passwordHash": "2a4f1c508fc8d0a1c5b677a9359a8cd711a96bcc503494866119faa79a9e997c",
+    "passwordSalt": "2e8609be64469fa5",
+    "mustChangePassword": true,
+    "createdAt": "2026-09-09T13:03:14.009143",
+    "updatedAt": "2026-09-09T13:03:14.009143"
+  }
+]

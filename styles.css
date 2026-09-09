@@ -77,20 +77,79 @@ h3 {
 .entry-screen {
   min-height: 100vh;
   display: grid;
-  place-items: center;
-  padding: 24px;
+  grid-template-columns: minmax(0, 1.1fr) minmax(360px, 432px);
+  align-items: center;
+  gap: clamp(32px, 7vw, 96px);
+  padding: clamp(28px, 5vw, 72px);
   background:
-    radial-gradient(circle at 50% 10%, rgba(255, 255, 255, 0.86), rgba(255, 255, 255, 0.42) 30%, transparent 56%),
-    linear-gradient(135deg, rgba(146, 172, 160, 0.32), rgba(255, 255, 255, 0.72) 46%, rgba(146, 172, 160, 0.22));
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(115deg, #17352d 0%, #294f43 47%, #92ACA0 100%);
+  background-size: 38px 38px, 38px 38px, auto;
+  color: #fff;
+  overflow: hidden;
+  position: relative;
+}
+
+.entry-screen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(18, 42, 35, 0.18), rgba(255, 255, 255, 0.16));
+  pointer-events: none;
+}
+
+.entry-hero {
+  position: relative;
+  z-index: 1;
+  max-width: 660px;
+}
+
+.entry-hero-logo {
+  display: block;
+  width: min(292px, 56vw);
+  margin: 0 0 36px;
+  filter: brightness(0) invert(1);
+}
+
+.entry-hero h1 {
+  margin: 0 0 16px;
+  color: #fff;
+  font-size: clamp(3.25rem, 7vw, 5.5rem);
+  line-height: 0.94;
+  letter-spacing: 0;
+}
+
+.entry-hero p {
+  width: min(520px, 100%);
+  margin: 0;
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 1.08rem;
+  font-weight: 800;
+}
+
+.entry-watermark {
+  position: absolute;
+  left: -44px;
+  bottom: -330px;
+  z-index: -1;
+  color: rgba(255, 255, 255, 0.09);
+  font-size: clamp(10rem, 23vw, 19rem);
+  font-weight: 900;
+  line-height: 1;
 }
 
 .entry-card {
-  width: min(100%, 860px);
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-  padding: 8px 4px;
+  position: relative;
+  z-index: 1;
+  width: min(100%, 432px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 18px;
+  background: rgba(247, 250, 248, 0.94);
+  box-shadow: 0 32px 80px rgba(10, 28, 23, 0.28);
+  padding: 28px 32px 30px;
+  color: var(--text);
+  backdrop-filter: blur(12px);
 }
 
 .password-screen {
@@ -114,7 +173,7 @@ h3 {
 }
 
 .entry-screen .logo-frame {
-  width: min(250px, 66%);
+  display: none;
 }
 
 .logo-frame::before {
@@ -150,14 +209,15 @@ form,
 }
 
 .login-title h1 {
-  font-size: 1.22rem;
+  font-size: 1.52rem;
   color: var(--accent-dark);
+  text-align: left;
 }
 
 .profile-cards {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
+  grid-template-columns: 1fr;
+  gap: 10px;
 }
 
 .profile-card {
@@ -167,13 +227,13 @@ form,
   align-items: center;
   justify-items: start;
   gap: 12px;
-  min-height: 86px;
+  min-height: 64px;
   border: 1px solid rgba(146, 172, 160, 0.22);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.42);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.68);
   color: var(--text);
   cursor: pointer;
-  padding: 18px;
+  padding: 12px;
   text-align: left;
   box-shadow: 0 18px 42px rgba(146, 172, 160, 0.16);
   backdrop-filter: blur(12px);
@@ -184,9 +244,10 @@ form,
 .profile-card::after {
   content: "";
   position: absolute;
-  inset: auto 14px 12px 14px;
-  height: 4px;
-  border-radius: 999px;
+  inset: 10px auto 10px 0;
+  width: 4px;
+  height: auto;
+  border-radius: 0 999px 999px 0;
   background: var(--accent);
   opacity: 0;
   transition: opacity 0.16s ease;
@@ -214,7 +275,7 @@ form,
   place-items: center;
   width: 46px;
   height: 46px;
-  border-radius: 14px;
+  border-radius: 12px;
   background: rgba(146, 172, 160, 0.24);
   color: var(--accent-dark);
 }
@@ -227,7 +288,7 @@ form,
 
 .profile-title {
   color: var(--accent-dark);
-  font-size: 1.05rem;
+  font-size: 1rem;
   font-weight: 900;
 }
 
@@ -859,7 +920,7 @@ select:disabled {
 
 .status-widgets {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 12px;
   margin: 0 0 16px;
 }
@@ -886,6 +947,18 @@ select:disabled {
 
 .status-widget.progress::after {
   background: var(--gold);
+}
+
+.status-widget.bath::after {
+  background: #527e86;
+}
+
+.status-widget.post-bath::after {
+  background: #7a8bb1;
+}
+
+.status-widget.final-prep::after {
+  background: #7f6f96;
 }
 
 .status-widget.delivered::after {
@@ -954,6 +1027,21 @@ select:disabled {
 .order-card.order-progress {
   border-left-color: #c9a24a;
   background: linear-gradient(90deg, rgba(201, 162, 74, 0.13), #fff 18%);
+}
+
+.order-card.order-bath {
+  border-left-color: #527e86;
+  background: linear-gradient(90deg, rgba(82, 126, 134, 0.13), #fff 18%);
+}
+
+.order-card.order-post-bath {
+  border-left-color: #7a8bb1;
+  background: linear-gradient(90deg, rgba(122, 139, 177, 0.13), #fff 18%);
+}
+
+.order-card.order-final-prep {
+  border-left-color: #7f6f96;
+  background: linear-gradient(90deg, rgba(127, 111, 150, 0.13), #fff 18%);
 }
 
 .order-card.order-delivered {
@@ -1104,6 +1192,21 @@ select:disabled {
 .order-progress .status-pill {
   background: rgba(201, 162, 74, 0.2);
   color: #5f4a10;
+}
+
+.order-bath .status-pill {
+  background: rgba(82, 126, 134, 0.18);
+  color: #31555d;
+}
+
+.order-post-bath .status-pill {
+  background: rgba(122, 139, 177, 0.18);
+  color: #415174;
+}
+
+.order-final-prep .status-pill {
+  background: rgba(127, 111, 150, 0.18);
+  color: #4f4166;
 }
 
 .order-delivered .status-pill {
@@ -1309,20 +1412,48 @@ select:disabled {
 
 @media (min-width: 760px) {
   .entry-card {
-    width: min(100%, 880px);
+    width: min(100%, 432px);
   }
 
   .profile-cards {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: 1fr;
   }
 
   .profile-card {
     grid-template-columns: 46px minmax(0, 1fr);
-    min-height: 86px;
+    min-height: 64px;
   }
 }
 
 @media (max-width: 760px) {
+  .entry-screen {
+    grid-template-columns: 1fr;
+    align-content: start;
+    gap: 24px;
+    padding: 24px;
+  }
+
+  .entry-hero-logo {
+    width: 150px;
+    margin-bottom: 20px;
+  }
+
+  .entry-hero h1 {
+    font-size: 2.7rem;
+  }
+
+  .entry-hero p {
+    font-size: 0.98rem;
+  }
+
+  .entry-watermark {
+    display: none;
+  }
+
+  .entry-card {
+    padding: 24px;
+  }
+
   .app-header,
   .brand-block,
   .session-strip,

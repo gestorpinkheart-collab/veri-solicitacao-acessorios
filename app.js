@@ -14,6 +14,9 @@ const defaultUsers = [
 const statuses = [
   "Pedido Recebido",
   "Em separa\u00e7\u00e3o",
+  "Em prepara\u00e7\u00e3o de banho (galvanoplastia)",
+  "P\u00f3s banho",
+  "Prepara\u00e7\u00e3o final",
   "Entregue",
 ];
 
@@ -157,6 +160,9 @@ const elements = {
   filterPriority: document.querySelector("#filterPriority"),
   widgetReceived: document.querySelector("#widgetReceived"),
   widgetProgress: document.querySelector("#widgetProgress"),
+  widgetBathPrep: document.querySelector("#widgetBathPrep"),
+  widgetPostBath: document.querySelector("#widgetPostBath"),
+  widgetFinalPrep: document.querySelector("#widgetFinalPrep"),
   widgetDelivered: document.querySelector("#widgetDelivered"),
   dashboardDateFrom: document.querySelector("#dashboardDateFrom"),
   dashboardDateTo: document.querySelector("#dashboardDateTo"),
@@ -1915,7 +1921,14 @@ function getFilteredOrders() {
 }
 
 function orderSortByStatus(a, b) {
-  const order = { "Pedido Recebido": 0, "Em separa\u00e7\u00e3o": 1, Entregue: 2 };
+  const order = {
+    "Pedido Recebido": 0,
+    "Em separa\u00e7\u00e3o": 1,
+    "Em prepara\u00e7\u00e3o de banho (galvanoplastia)": 2,
+    "P\u00f3s banho": 3,
+    "Prepara\u00e7\u00e3o final": 4,
+    Entregue: 5,
+  };
   const statusDiff = (order[normalizeStatus(a.status)] ?? 9) - (order[normalizeStatus(b.status)] ?? 9);
   if (statusDiff) return statusDiff;
   return String(b.id || "").localeCompare(String(a.id || ""));
@@ -1925,6 +1938,9 @@ function statusClass(status) {
   const currentStatus = normalizeStatus(status);
   if (currentStatus === "Pedido Recebido") return "order-received";
   if (currentStatus === "Em separa\u00e7\u00e3o") return "order-progress";
+  if (currentStatus === "Em prepara\u00e7\u00e3o de banho (galvanoplastia)") return "order-bath";
+  if (currentStatus === "P\u00f3s banho") return "order-post-bath";
+  if (currentStatus === "Prepara\u00e7\u00e3o final") return "order-final-prep";
   if (currentStatus === "Entregue") return "order-delivered";
   return "";
 }
@@ -1946,7 +1962,7 @@ function getDashboardOrders() {
     return (
       (!dateFrom || orderDate >= dateFrom) &&
       (!dateTo || orderDate <= dateTo) &&
-      (!status || order.status === status) &&
+      (!status || normalizeStatus(order.status) === status) &&
       (!origin || order.origin === origin) &&
       (!requester || normalizeText(order.requester).includes(requester))
     );
@@ -1956,9 +1972,12 @@ function getDashboardOrders() {
 function renderMetrics() {
   const visibleOrders = getDashboardOrders();
   const urgent = visibleOrders.filter((order) => order.priority === "Urgente").length;
-  const newOpen = visibleOrders.filter((order) => order.status === "Pedido Recebido").length;
-  const progress = visibleOrders.filter((order) => order.status === "Em separa\u00e7\u00e3o").length;
-  const delivered = visibleOrders.filter((order) => order.status === "Entregue").length;
+  const newOpen = visibleOrders.filter((order) => normalizeStatus(order.status) === "Pedido Recebido").length;
+  const progress = visibleOrders.filter((order) => {
+    const status = normalizeStatus(order.status);
+    return status !== "Pedido Recebido" && status !== "Entregue";
+  }).length;
+  const delivered = visibleOrders.filter((order) => normalizeStatus(order.status) === "Entregue").length;
   elements.metricTotal.textContent = newOpen;
   elements.metricUrgent.textContent = urgent;
   elements.metricOpen.textContent = progress;
@@ -1967,9 +1986,13 @@ function renderMetrics() {
 
 function renderStatusWidgets() {
   const visibleOrders = getVisibleOrders();
-  elements.widgetReceived.textContent = visibleOrders.filter((order) => order.status === "Pedido Recebido").length;
-  elements.widgetProgress.textContent = visibleOrders.filter((order) => order.status === "Em separa\u00e7\u00e3o").length;
-  elements.widgetDelivered.textContent = visibleOrders.filter((order) => order.status === "Entregue").length;
+  const countStatus = (status) => visibleOrders.filter((order) => normalizeStatus(order.status) === status).length;
+  elements.widgetReceived.textContent = countStatus("Pedido Recebido");
+  elements.widgetProgress.textContent = countStatus("Em separa\u00e7\u00e3o");
+  if (elements.widgetBathPrep) elements.widgetBathPrep.textContent = countStatus("Em prepara\u00e7\u00e3o de banho (galvanoplastia)");
+  if (elements.widgetPostBath) elements.widgetPostBath.textContent = countStatus("P\u00f3s banho");
+  if (elements.widgetFinalPrep) elements.widgetFinalPrep.textContent = countStatus("Prepara\u00e7\u00e3o final");
+  elements.widgetDelivered.textContent = countStatus("Entregue");
 }
 
 function renderCharts() {
@@ -1994,7 +2017,7 @@ function renderDashboardTable() {
     const current = grouped.get(key) || { requester: key, orders: 0, pieces: 0, open: 0, delivered: 0 };
     current.orders += 1;
     current.pieces += countPieces([order]);
-    if (order.status === "Entregue") current.delivered += 1;
+    if (normalizeStatus(order.status) === "Entregue") current.delivered += 1;
     else current.open += 1;
     grouped.set(key, current);
   });
@@ -2375,9 +2398,13 @@ function statusHelperText(status) {
   const messages = {
     "Pedido Recebido": "Solicitado \u00e0 f\u00e1brica",
     "Em separa\u00e7\u00e3o": "Em andamento",
+    "Em prepara\u00e7\u00e3o de banho (galvanoplastia)": "Em banho",
+    "P\u00f3s banho": "Confer\u00eancia ap\u00f3s banho",
+    "Prepara\u00e7\u00e3o final": "Prepara\u00e7\u00e3o para entrega",
     Entregue: "Pedido finalizado",
   };
-  return messages[status] || status || "";
+  const currentStatus = normalizeStatus(status);
+  return messages[currentStatus] || currentStatus || "";
 }
 
 function cloneOrder(id) {
@@ -2421,6 +2448,7 @@ function isMasterWorkspaceUser() {
 }
 
 function buildStatusMessage(order) {
+  const currentStatus = normalizeStatus(order.status);
   const totalPieces = countPieces([order]);
   const itemSummary = order.items
     .slice(0, 4)
@@ -2431,10 +2459,13 @@ function buildStatusMessage(order) {
   const statusMessages = {
     "Pedido Recebido": `${base}\n\nStatus: Pedido recebido com sucesso.\nSua solicita\u00e7\u00e3o foi registrada para a f\u00e1brica. A pr\u00f3xima atualiza\u00e7\u00e3o ser\u00e1 feita pela Gest\u00e3o de Pedidos.\n\nObrigado por acompanhar pelo sistema VERI.`,
     "Em separa\u00e7\u00e3o": `${base}\n\nStatus: Em separa\u00e7\u00e3o.\nSeu pedido est\u00e1 em andamento na f\u00e1brica. Avisaremos assim que a etapa for conclu\u00edda.\n\nEquipe VERI.`,
+    "Em prepara\u00e7\u00e3o de banho (galvanoplastia)": `${base}\n\nStatus: Em prepara\u00e7\u00e3o de banho (galvanoplastia).\nSeu pedido foi direcionado para a etapa de banho. Avisaremos na pr\u00f3xima movimenta\u00e7\u00e3o.\n\nEquipe VERI.`,
+    "P\u00f3s banho": `${base}\n\nStatus: P\u00f3s banho.\nSeu pedido retornou do banho e est\u00e1 em confer\u00eancia para a etapa final.\n\nEquipe VERI.`,
+    "Prepara\u00e7\u00e3o final": `${base}\n\nStatus: Prepara\u00e7\u00e3o final.\nSeu pedido est\u00e1 sendo preparado para entrega.\n\nEquipe VERI.`,
     Entregue: `${base}\n\nStatus: Entregue.\nSeu pedido foi finalizado e entregue. Obrigado por utilizar o sistema VERI.`,
   };
 
-  return statusMessages[order.status] || `${base}\n\nStatus atual: ${order.status}.\n\nEquipe VERI.`;
+  return statusMessages[currentStatus] || `${base}\n\nStatus atual: ${currentStatus}.\n\nEquipe VERI.`;
 }
 
 function whatsappUrl(order) {
@@ -2444,7 +2475,7 @@ function whatsappUrl(order) {
 function renderReports() {
   const visibleOrders = getReportOrders();
   elements.reportTotalOrders.textContent = visibleOrders.length;
-  elements.reportOpenOrders.textContent = visibleOrders.filter((order) => order.status !== "Entregue").length;
+  elements.reportOpenOrders.textContent = visibleOrders.filter((order) => normalizeStatus(order.status) !== "Entregue").length;
   elements.reportTotalPieces.textContent = countPieces(visibleOrders);
   elements.reportBody.innerHTML = "";
 
@@ -2508,14 +2539,14 @@ function getReportOrders() {
       order.phone,
       order.origin,
       order.priority,
-      order.status,
+      normalizeStatus(order.status),
       order.notes,
       ...order.items.map((item) => `${item.model} ${item.size} ${item.bath}`),
     ]
       .join(" ")
       .toLowerCase();
 
-    return (!search || text.includes(search)) && (!status || order.status === status) && (!priority || order.priority === priority);
+    return (!search || text.includes(search)) && (!status || normalizeStatus(order.status) === status) && (!priority || order.priority === priority);
   });
 }
 
@@ -2526,7 +2557,7 @@ function countPieces(orderList) {
 function countByStatus() {
   const visibleOrders = getDashboardOrders();
   return statuses.reduce((acc, status) => {
-    acc[status] = visibleOrders.filter((order) => order.status === status).length;
+    acc[status] = visibleOrders.filter((order) => normalizeStatus(order.status) === status).length;
     return acc;
   }, {});
 }
@@ -2796,9 +2827,21 @@ function repairText(value) {
 }
 
 function normalizeStatus(status) {
-  if (status === "Entregue") return "Entregue";
-  if (status === "Pedido Enviado") return "Pedido Recebido";
-  if (status === "Pedido Recebido") return "Pedido Recebido";
+  const text = repairText(status).trim();
+  const key = normalizeText(text);
+  if (key === "entregue" || key === "finalizado" || key === "finalizado (entregue)") return "Entregue";
+  if (key === "pedido enviado" || key === "recebido" || key === "pedido recebido") return "Pedido Recebido";
+  if (key === "em separacao") return "Em separa\u00e7\u00e3o";
+  if (
+    key === "galvanoplastia" ||
+    key === "em banho" ||
+    key === "em preparacao de banho" ||
+    key === "em preparacao de banho (galvanoplastia)"
+  ) {
+    return "Em prepara\u00e7\u00e3o de banho (galvanoplastia)";
+  }
+  if (key === "pos banho" || key === "pos-banho") return "P\u00f3s banho";
+  if (key === "preparacao final") return "Prepara\u00e7\u00e3o final";
   return "Em separa\u00e7\u00e3o";
 }
 

@@ -4,16 +4,22 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>VERI | Solicitação de Peças</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="styles.css?v=20260909-login-processo">
   </head>
   <body>
     <section class="entry-screen" id="entryScreen" aria-label="Login">
+      <div class="entry-hero" aria-hidden="true">
+        <img class="entry-hero-logo" src="logo-veri.png" alt="">
+        <h1>Pedido de acess&oacute;rios.</h1>
+        <p>Solicite, acompanhe e gerencie pedidos de forma simples.</p>
+        <span class="entry-watermark">VERI</span>
+      </div>
       <div class="entry-card">
         <div class="logo-frame">
           <img class="entry-logo" src="logo-veri.png" alt="VERI">
         </div>
         <div class="login-title">
-          <h1>Solicitação de acessórios</h1>
+          <h1>Entrar no sistema</h1>
         </div>
         <form id="loginForm" class="login-form">
           <div class="profile-cards" role="tablist" aria-label="Tipo de acesso">
@@ -189,6 +195,18 @@
               <article class="status-widget progress">
                 <span>Em separação</span>
                 <strong id="widgetProgress">0</strong>
+              </article>
+              <article class="status-widget bath">
+                <span>Galvanoplastia</span>
+                <strong id="widgetBathPrep">0</strong>
+              </article>
+              <article class="status-widget post-bath">
+                <span>Pós banho</span>
+                <strong id="widgetPostBath">0</strong>
+              </article>
+              <article class="status-widget final-prep">
+                <span>Preparação final</span>
+                <strong id="widgetFinalPrep">0</strong>
               </article>
               <article class="status-widget delivered">
                 <span>Entregues</span>
@@ -734,6 +752,6 @@
       </div>
     </template>
 
-    <script src="app.js?v=20260810-historico-gestao" charset="utf-8"></script>
+    <script src="app.js?v=20260909-login-processo" charset="utf-8"></script>
   </body>
 </html>
