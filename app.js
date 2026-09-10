@@ -704,9 +704,10 @@ async function submitPasswordResetRequest(event) {
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || "N\u00e3o foi poss\u00edvel registrar a solicita\u00e7\u00e3o.");
-    alert(`${payload.message}\n\nC\u00f3digo da solicita\u00e7\u00e3o: ${payload.requestCode}\n\nGuarde este c\u00f3digo. Ap\u00f3s aprova\u00e7\u00e3o do administrador, use a op\u00e7\u00e3o \"Redefinir senha autorizada\".`);
+    alert(`${payload.message}\n\nC\u00f3digo da solicita\u00e7\u00e3o: ${payload.requestCode}\n\nGuarde este c\u00f3digo. Ap\u00f3s aprova\u00e7\u00e3o do administrador, informe o c\u00f3digo para criar sua nova senha.`);
     elements.resetRequestForm.reset();
-    showResetMode("login");
+    showResetMode("complete");
+    elements.resetCompleteLogin.value = trimmedLogin;
     if (payload.whatsappUrl) openExternalLink(payload.whatsappUrl);
   } catch (error) {
     elements.resetRequestError.textContent = error.message || "N\u00e3o foi poss\u00edvel registrar a solicita\u00e7\u00e3o.";
