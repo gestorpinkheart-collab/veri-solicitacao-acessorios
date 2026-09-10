@@ -198,3 +198,47 @@ on public.accessory_users
 for all
 using (auth.role() = 'service_role')
 with check (auth.role() = 'service_role');
+
+create table if not exists public.accessory_password_resets (
+  id text primary key,
+  login text not null,
+  user_name text,
+  role text,
+  status text not null default 'PENDENTE' check (
+    status in ('PENDENTE', 'APROVADO', 'RECUSADO', 'CONCLUIDO', 'EXPIRADO')
+  ),
+  code_hash text not null,
+  approved_by text,
+  decided_by text,
+  created_at timestamptz not null default now(),
+  approved_at timestamptz,
+  expires_at timestamptz,
+  used_at timestamptz,
+  decided_at timestamptz
+);
+
+alter table public.accessory_password_resets add column if not exists user_name text;
+alter table public.accessory_password_resets add column if not exists role text;
+alter table public.accessory_password_resets add column if not exists approved_by text;
+alter table public.accessory_password_resets add column if not exists decided_by text;
+alter table public.accessory_password_resets add column if not exists approved_at timestamptz;
+alter table public.accessory_password_resets add column if not exists expires_at timestamptz;
+alter table public.accessory_password_resets add column if not exists used_at timestamptz;
+alter table public.accessory_password_resets add column if not exists decided_at timestamptz;
+alter table public.accessory_password_resets drop constraint if exists accessory_password_resets_status_check;
+alter table public.accessory_password_resets add constraint accessory_password_resets_status_check check (
+  status in ('PENDENTE', 'APROVADO', 'RECUSADO', 'CONCLUIDO', 'EXPIRADO')
+);
+
+create index if not exists accessory_password_resets_login_idx on public.accessory_password_resets (login);
+create index if not exists accessory_password_resets_status_idx on public.accessory_password_resets (status);
+create index if not exists accessory_password_resets_created_at_idx on public.accessory_password_resets (created_at desc);
+
+alter table public.accessory_password_resets enable row level security;
+
+drop policy if exists "service role manages accessory password resets" on public.accessory_password_resets;
+create policy "service role manages accessory password resets"
+on public.accessory_password_resets
+for all
+using (auth.role() = 'service_role')
+with check (auth.role() = 'service_role');

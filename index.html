@@ -104,7 +104,45 @@
           </div>
           <p class="login-error" id="loginError" role="alert"></p>
           <div class="login-actions">
+            <button class="text-button" id="forgotPasswordButton" type="button">Esqueci minha senha</button>
+            <button class="text-button" id="authorizedResetButton" type="button">Redefinir senha autorizada</button>
             <button class="primary-button" id="loginSubmitButton" type="submit">Entrar</button>
+          </div>
+        </form>
+        <form id="resetRequestForm" class="login-form reset-form" hidden>
+          <p class="subtle-text">Informe seu usu&aacute;rio. A solicita&ccedil;&atilde;o ser&aacute; registrada e o WhatsApp ser&aacute; aberto para aviso ao administrador.</p>
+          <label>
+            Usu&aacute;rio/Login
+            <input id="resetRequestLogin" type="text" placeholder="Digite seu usu&aacute;rio" autocomplete="off">
+          </label>
+          <p class="login-error" id="resetRequestError" role="alert"></p>
+          <div class="login-actions">
+            <button class="text-button" id="cancelResetRequest" type="button">Cancelar</button>
+            <button class="primary-button" type="submit">Solicitar</button>
+          </div>
+        </form>
+        <form id="resetCompleteForm" class="login-form reset-form" hidden>
+          <p class="subtle-text">Use esta etapa somente ap&oacute;s aprova&ccedil;&atilde;o do administrador. A autoriza&ccedil;&atilde;o expira em 30 minutos.</p>
+          <label>
+            Usu&aacute;rio/Login
+            <input id="resetCompleteLogin" type="text" placeholder="Digite seu usu&aacute;rio" autocomplete="off">
+          </label>
+          <label>
+            C&oacute;digo da solicita&ccedil;&atilde;o
+            <input id="resetCompleteCode" type="text" placeholder="Ex.: RS-000000" autocomplete="off">
+          </label>
+          <label>
+            Nova senha
+            <input id="resetCompletePassword" type="password" placeholder="Digite sua nova senha" autocomplete="new-password">
+          </label>
+          <label>
+            Confirmar senha
+            <input id="resetCompleteConfirm" type="password" placeholder="Repita sua nova senha" autocomplete="new-password">
+          </label>
+          <p class="login-error" id="resetCompleteError" role="alert"></p>
+          <div class="login-actions">
+            <button class="text-button" id="cancelResetComplete" type="button">Cancelar</button>
+            <button class="primary-button" type="submit">Redefinir senha</button>
           </div>
         </form>
       </div>
@@ -630,6 +668,31 @@
                     </tr>
                   </thead>
                   <tbody id="masterUsersBody"></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="management-panel">
+              <div class="panel-title-row">
+                <div>
+                  <p class="eyebrow">Seguran&ccedil;a</p>
+                  <h2>Solicita&ccedil;&otilde;es de Redefini&ccedil;&atilde;o de Senha</h2>
+                </div>
+                <button class="ghost-button small" id="refreshPasswordResets" type="button">Atualizar</button>
+              </div>
+              <p class="subtle-text">Aprovar libera o usu&aacute;rio para criar a pr&oacute;pria senha usando o c&oacute;digo da solicita&ccedil;&atilde;o. A autoriza&ccedil;&atilde;o expira em 30 minutos e n&atilde;o pode ser reutilizada.</p>
+              <div class="table-wrap compact-table">
+                <table class="report-table">
+                  <thead>
+                    <tr>
+                      <th>Solicitado em</th>
+                      <th>Usu&aacute;rio</th>
+                      <th>Perfil</th>
+                      <th>Status</th>
+                      <th>Validade</th>
+                      <th>A&ccedil;&atilde;o</th>
+                    </tr>
+                  </thead>
+                  <tbody id="passwordResetRequestsBody"></tbody>
                 </table>
               </div>
             </div>

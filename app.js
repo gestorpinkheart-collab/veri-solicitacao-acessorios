@@ -5,6 +5,7 @@ const API_ORDERS_URL = "/api/orders";
 const API_ACCESS_LOGS_URL = "/api/access-logs";
 const API_PRICES_URL = "/api/prices";
 const API_COST_SETTINGS_URL = "/api/cost-settings";
+const API_PASSWORD_RESET_URL = "/api/password-reset";
 const defaultUsers = [
   { login: "Charles Marinho", password: "12345", name: "Charles Marinho", role: "master", mustChangePassword: true },
   { login: "Willians.Jorge", password: "12345", name: "Willians Jorge", role: "master", mustChangePassword: true },
@@ -94,6 +95,7 @@ let currentSession = loadSession();
 let apiAvailable = false;
 let users = loadUsers();
 let masterUsers = [];
+let passwordResetRequests = [];
 let masterCredential = null;
 let masterDatabase = null;
 let pendingUser = null;
@@ -107,6 +109,8 @@ const elements = {
   appShell: document.querySelector("#appShell"),
   passwordScreen: document.querySelector("#passwordScreen"),
   loginForm: document.querySelector("#loginForm"),
+  resetRequestForm: document.querySelector("#resetRequestForm"),
+  resetCompleteForm: document.querySelector("#resetCompleteForm"),
   passwordForm: document.querySelector("#passwordForm"),
   commonLoginTab: document.querySelector("#commonLoginTab"),
   consultantLoginTab: document.querySelector("#consultantLoginTab"),
@@ -128,6 +132,17 @@ const elements = {
   registerPassword: document.querySelector("#registerPassword"),
   registerConfirmPassword: document.querySelector("#registerConfirmPassword"),
   loginSubmitButton: document.querySelector("#loginSubmitButton"),
+  forgotPasswordButton: document.querySelector("#forgotPasswordButton"),
+  authorizedResetButton: document.querySelector("#authorizedResetButton"),
+  resetRequestLogin: document.querySelector("#resetRequestLogin"),
+  resetRequestError: document.querySelector("#resetRequestError"),
+  cancelResetRequest: document.querySelector("#cancelResetRequest"),
+  resetCompleteLogin: document.querySelector("#resetCompleteLogin"),
+  resetCompleteCode: document.querySelector("#resetCompleteCode"),
+  resetCompletePassword: document.querySelector("#resetCompletePassword"),
+  resetCompleteConfirm: document.querySelector("#resetCompleteConfirm"),
+  resetCompleteError: document.querySelector("#resetCompleteError"),
+  cancelResetComplete: document.querySelector("#cancelResetComplete"),
   internalLogin: document.querySelector("#internalLogin"),
   masterPassword: document.querySelector("#masterPassword"),
   loginError: document.querySelector("#loginError"),
@@ -208,6 +223,7 @@ const elements = {
   masterCostTotal: document.querySelector("#masterCostTotal"),
   masterCostBody: document.querySelector("#masterCostBody"),
   refreshUsers: document.querySelector("#refreshUsers"),
+  refreshPasswordResets: document.querySelector("#refreshPasswordResets"),
   managementUserForm: document.querySelector("#managementUserForm"),
   managementUserRole: document.querySelector("#managementUserRole"),
   managementUserLogin: document.querySelector("#managementUserLogin"),
@@ -215,6 +231,7 @@ const elements = {
   managementUserSector: document.querySelector("#managementUserSector"),
   managementUserPassword: document.querySelector("#managementUserPassword"),
   masterUsersBody: document.querySelector("#masterUsersBody"),
+  passwordResetRequestsBody: document.querySelector("#passwordResetRequestsBody"),
   refreshDatabase: document.querySelector("#refreshDatabase"),
   exportDatabase: document.querySelector("#exportDatabase"),
   databaseTableSelect: document.querySelector("#databaseTableSelect"),
@@ -257,7 +274,13 @@ async function init() {
   applySessionState();
 
   elements.loginForm.addEventListener("submit", handleLogin);
+  elements.resetRequestForm?.addEventListener("submit", submitPasswordResetRequest);
+  elements.resetCompleteForm?.addEventListener("submit", submitAuthorizedPasswordReset);
   elements.passwordForm.addEventListener("submit", handlePasswordChange);
+  elements.forgotPasswordButton?.addEventListener("click", requestPasswordReset);
+  elements.authorizedResetButton?.addEventListener("click", completeAuthorizedPasswordReset);
+  elements.cancelResetRequest?.addEventListener("click", () => showResetMode("login"));
+  elements.cancelResetComplete?.addEventListener("click", () => showResetMode("login"));
   document.querySelectorAll("[data-login-mode]").forEach((button) => {
     button.addEventListener("click", () => setLoginMode(button.dataset.loginMode));
   });
@@ -285,6 +308,7 @@ async function init() {
   elements.refreshMyOrders?.addEventListener("click", refreshOrders);
   elements.refreshMasterData?.addEventListener("click", loadMasterData);
   elements.refreshUsers?.addEventListener("click", loadMasterUsers);
+  elements.refreshPasswordResets?.addEventListener("click", loadPasswordResetRequests);
   elements.managementUserForm?.addEventListener("submit", handleManagementUserSubmit);
   elements.refreshDatabase?.addEventListener("click", loadMasterDatabase);
   elements.exportDatabase?.addEventListener("click", exportMasterDatabase);
@@ -660,6 +684,84 @@ async function handlePasswordChange(event) {
   }
 }
 
+async function requestPasswordReset() {
+  showResetMode("request");
+}
+
+async function submitPasswordResetRequest(event) {
+  event.preventDefault();
+  const trimmedLogin = elements.resetRequestLogin.value.trim();
+  if (!trimmedLogin) {
+    elements.resetRequestError.textContent = "Informe o usu\u00e1rio/login para solicitar a redefini\u00e7\u00e3o.";
+    return;
+  }
+
+  try {
+    const response = await fetch(`${API_PASSWORD_RESET_URL}/request`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ login: trimmedLogin }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || "N\u00e3o foi poss\u00edvel registrar a solicita\u00e7\u00e3o.");
+    alert(`${payload.message}\n\nC\u00f3digo da solicita\u00e7\u00e3o: ${payload.requestCode}\n\nGuarde este c\u00f3digo. Ap\u00f3s aprova\u00e7\u00e3o do administrador, use a op\u00e7\u00e3o \"Redefinir senha autorizada\".`);
+    elements.resetRequestForm.reset();
+    showResetMode("login");
+    if (payload.whatsappUrl) openExternalLink(payload.whatsappUrl);
+  } catch (error) {
+    elements.resetRequestError.textContent = error.message || "N\u00e3o foi poss\u00edvel registrar a solicita\u00e7\u00e3o.";
+  }
+}
+
+async function completeAuthorizedPasswordReset() {
+  showResetMode("complete");
+}
+
+async function submitAuthorizedPasswordReset(event) {
+  event.preventDefault();
+  const login = elements.resetCompleteLogin.value.trim();
+  const requestCode = elements.resetCompleteCode.value.trim();
+  const newPassword = elements.resetCompletePassword.value;
+  const confirmation = elements.resetCompleteConfirm.value;
+
+  if (!login || !requestCode || !newPassword) {
+    elements.resetCompleteError.textContent = "Informe usu\u00e1rio, c\u00f3digo e nova senha.";
+    return;
+  }
+  if (newPassword !== confirmation) {
+    elements.resetCompleteError.textContent = "As senhas n\u00e3o conferem.";
+    return;
+  }
+
+  try {
+    const response = await fetch(`${API_PASSWORD_RESET_URL}/complete`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ login: login.trim(), requestCode: requestCode.trim(), newPassword }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || "N\u00e3o foi poss\u00edvel redefinir a senha.");
+    alert("Senha redefinida com sucesso. Entre novamente com sua nova senha.");
+    elements.resetCompleteForm.reset();
+    showResetMode("login");
+    elements.collaboratorLogin.value = payload.user?.login || login.trim();
+    elements.collaboratorPassword.value = "";
+  } catch (error) {
+    elements.resetCompleteError.textContent = error.message || "N\u00e3o foi poss\u00edvel redefinir a senha.";
+  }
+}
+
+function showResetMode(mode) {
+  elements.loginError.textContent = "";
+  elements.resetRequestError.textContent = "";
+  elements.resetCompleteError.textContent = "";
+  elements.loginForm.hidden = mode !== "login";
+  elements.resetRequestForm.hidden = mode !== "request";
+  elements.resetCompleteForm.hidden = mode !== "complete";
+  if (mode === "request") elements.resetRequestLogin.focus();
+  if (mode === "complete") elements.resetCompleteLogin.focus();
+}
+
 function applySessionState() {
   const isLoggedIn = Boolean(currentSession?.name);
   elements.entryScreen.hidden = isLoggedIn;
@@ -971,6 +1073,7 @@ async function loadMasterData() {
     console.error(error);
   }
   await loadMasterUsers(false);
+  await loadPasswordResetRequests(false);
   renderMasterPanel();
 }
 
@@ -996,6 +1099,32 @@ async function loadMasterUsers(shouldRender = true) {
     masterUsers = [];
     if (elements.masterUsersBody) {
       elements.masterUsersBody.innerHTML = `<tr><td colspan="9">${error.message}</td></tr>`;
+    }
+  }
+}
+
+async function loadPasswordResetRequests(shouldRender = true) {
+  if (!isMasterUser() || !masterCredential) {
+    if (elements.passwordResetRequestsBody) {
+      elements.passwordResetRequestsBody.innerHTML = '<tr><td colspan="6">Entre novamente como Master para carregar as solicita\u00e7\u00f5es.</td></tr>';
+    }
+    return;
+  }
+
+  try {
+    const response = await fetch(`${API_PASSWORD_RESET_URL}/admin-list`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ master: masterCredential }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || "N\u00e3o foi poss\u00edvel carregar solicita\u00e7\u00f5es.");
+    passwordResetRequests = Array.isArray(payload.requests) ? payload.requests : [];
+    if (shouldRender) renderMasterPanel();
+  } catch (error) {
+    passwordResetRequests = [];
+    if (elements.passwordResetRequestsBody) {
+      elements.passwordResetRequestsBody.innerHTML = `<tr><td colspan="6">${error.message}</td></tr>`;
     }
   }
 }
@@ -1595,6 +1724,7 @@ function renderMasterPanel() {
   renderAccessLogs();
   renderOrderHistory(historyRows);
   renderMasterUsers();
+  renderPasswordResetRequests();
   renderDatabaseSummary();
   renderDatabasePreview();
   renderPrices();
@@ -1711,6 +1841,10 @@ function accessEventLabel(eventType) {
     senha_provisoria: "Senha provis\u00f3ria",
     usuario_gestao_criado: "Usu\u00e1rio Gest\u00e3o criado",
     usuario_admin_criado: "Usu\u00e1rio administrativo criado",
+    reset_senha_solicitado: "Redefini\u00e7\u00e3o solicitada",
+    reset_senha_aprovado: "Redefini\u00e7\u00e3o aprovada",
+    reset_senha_recusado: "Redefini\u00e7\u00e3o recusada",
+    reset_senha_concluido: "Senha redefinida",
   };
   return labels[eventType] || eventType || "Login";
 }
@@ -1768,6 +1902,93 @@ function renderMasterUsers() {
     row.querySelector("[data-reset-user]").addEventListener("click", () => resetUserPassword(user.login));
     elements.masterUsersBody.append(row);
   });
+}
+
+function renderPasswordResetRequests() {
+  if (!elements.passwordResetRequestsBody) return;
+  elements.passwordResetRequestsBody.innerHTML = "";
+
+  if (!masterCredential) {
+    elements.passwordResetRequestsBody.innerHTML =
+      '<tr><td colspan="6">Entre novamente como Master para liberar as solicita\u00e7\u00f5es.</td></tr>';
+    return;
+  }
+
+  if (!passwordResetRequests.length) {
+    elements.passwordResetRequestsBody.innerHTML =
+      '<tr><td colspan="6">Nenhuma solicita\u00e7\u00e3o de redefini\u00e7\u00e3o registrada.</td></tr>';
+    return;
+  }
+
+  const statusOrder = { PENDENTE: 0, APROVADO: 1, RECUSADO: 2, EXPIRADO: 3, CONCLUIDO: 4 };
+  passwordResetRequests
+    .slice()
+    .sort((a, b) => {
+      const statusDiff = (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9);
+      if (statusDiff) return statusDiff;
+      return String(b.createdAt || "").localeCompare(String(a.createdAt || ""));
+    })
+    .forEach((request) => {
+      const isPending = request.status === "PENDENTE";
+      const row = document.createElement("tr");
+      row.innerHTML = `
+        <td>${formatDateTime(request.createdAt)}</td>
+        <td><strong>${request.login || ""}</strong><br><span>${request.userName || ""}</span></td>
+        <td>${roleLabel(request.role)}</td>
+        <td><span class="pill ${isPending ? "urgent" : ""}">${passwordResetStatusLabel(request.status)}</span></td>
+        <td>${request.expiresAt ? formatDateTime(request.expiresAt) : "-"}</td>
+        <td>
+          ${
+            isPending
+              ? `<div class="inline-actions">
+                  <button class="ghost-button small" type="button" data-reset-request="${request.id}" data-reset-decision="APROVADO">Aprovar</button>
+                  <button class="ghost-button small danger" type="button" data-reset-request="${request.id}" data-reset-decision="RECUSADO">Recusar</button>
+                </div>`
+              : "-"
+          }
+        </td>
+      `;
+
+      row.querySelectorAll("[data-reset-decision]").forEach((button) => {
+        button.addEventListener("click", () => decidePasswordReset(button.dataset.resetRequest, button.dataset.resetDecision));
+      });
+      elements.passwordResetRequestsBody.append(row);
+    });
+}
+
+function passwordResetStatusLabel(status) {
+  const labels = {
+    PENDENTE: "Pendente",
+    APROVADO: "Aprovado",
+    RECUSADO: "Recusado",
+    CONCLUIDO: "Conclu\u00eddo",
+    EXPIRADO: "Expirado",
+  };
+  return labels[status] || status || "-";
+}
+
+async function decidePasswordReset(requestId, decision) {
+  if (!isMasterUser() || !masterCredential || !requestId || !decision) return;
+
+  try {
+    const response = await fetch(`${API_PASSWORD_RESET_URL}/admin-decision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        master: masterCredential,
+        requestId,
+        decision,
+      }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || "N\u00e3o foi poss\u00edvel atualizar a solicita\u00e7\u00e3o.");
+
+    passwordResetRequests = passwordResetRequests.map((item) => (item.id === payload.request.id ? payload.request : item));
+    renderPasswordResetRequests();
+    alert(decision === "APROVADO" ? "Solicita\u00e7\u00e3o aprovada. O usu\u00e1rio j\u00e1 pode redefinir a pr\u00f3pria senha." : "Solicita\u00e7\u00e3o recusada.");
+  } catch (error) {
+    alert(error.message);
+  }
 }
 
 async function resetUserPassword(login) {

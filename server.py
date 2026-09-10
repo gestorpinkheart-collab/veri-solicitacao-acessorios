@@ -7,7 +7,7 @@ from zipfile import ZIP_DEFLATED, ZipFile
 from io import BytesIO
 from html import escape
 from os import environ
-from datetime import datetime
+from datetime import datetime, timedelta
 from secrets import token_hex
 from hashlib import sha256
 from urllib.error import HTTPError, URLError
@@ -19,6 +19,7 @@ DATA_FILE = ROOT / "orders.json"
 PRICES_FILE = ROOT / "prices.json"
 COST_SETTINGS_FILE = ROOT / "cost_settings.json"
 USERS_FILE = ROOT / "users.json"
+PASSWORD_RESETS_FILE = ROOT / "password_resets.json"
 LOCK = Lock()
 
 
@@ -42,6 +43,7 @@ SUPABASE_ACCESS_LOGS_TABLE = environ.get("SUPABASE_ACCESS_LOGS_TABLE", "accessor
 SUPABASE_PRICES_TABLE = environ.get("SUPABASE_PRICES_TABLE", "accessory_prices")
 SUPABASE_COST_SETTINGS_TABLE = environ.get("SUPABASE_COST_SETTINGS_TABLE", "accessory_cost_settings")
 SUPABASE_USERS_TABLE = environ.get("SUPABASE_USERS_TABLE", "accessory_users")
+SUPABASE_PASSWORD_RESETS_TABLE = environ.get("SUPABASE_PASSWORD_RESETS_TABLE", "accessory_password_resets")
 
 DEFAULT_USERS = [
     {"login": "Charles Marinho", "password": "12345", "name": "Charles Marinho", "role": "master", "mustChangePassword": True},
@@ -211,6 +213,35 @@ class RequestHandler(SimpleHTTPRequestHandler):
                 self.send_json({"ok": False, "error": str(exc)}, status=503)
             return
 
+        if self.path == "/api/password-reset/request":
+            try:
+                payload = self.read_json_body()
+            except ValueError:
+                self.send_error(400, "JSON inválido")
+                return
+
+            try:
+                self.send_json(create_password_reset_request(payload), status=201)
+            except StorageError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=503)
+            return
+
+        if self.path == "/api/password-reset/complete":
+            try:
+                payload = self.read_json_body()
+            except ValueError:
+                self.send_error(400, "JSON inválido")
+                return
+
+            try:
+                user = complete_password_reset(payload)
+                self.send_json({"ok": True, "user": user})
+            except ValueError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=400)
+            except StorageError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=503)
+            return
+
         if self.path == "/api/users/admin-list":
             try:
                 payload = self.read_json_body()
@@ -223,6 +254,38 @@ class RequestHandler(SimpleHTTPRequestHandler):
                 self.send_json({"ok": True, "users": users})
             except ValueError as exc:
                 self.send_json({"ok": False, "error": str(exc)}, status=403)
+            except StorageError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=503)
+            return
+
+        if self.path == "/api/password-reset/admin-list":
+            try:
+                payload = self.read_json_body()
+            except ValueError:
+                self.send_error(400, "JSON invalido")
+                return
+
+            try:
+                requests = list_password_reset_requests_for_master(payload)
+                self.send_json({"ok": True, "requests": requests})
+            except ValueError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=403)
+            except StorageError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=503)
+            return
+
+        if self.path == "/api/password-reset/admin-decision":
+            try:
+                payload = self.read_json_body()
+            except ValueError:
+                self.send_error(400, "JSON invalido")
+                return
+
+            try:
+                request = decide_password_reset_request(payload)
+                self.send_json({"ok": True, "request": request})
+            except ValueError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=400)
             except StorageError as exc:
                 self.send_json({"ok": False, "error": str(exc)}, status=503)
             return
@@ -599,6 +662,138 @@ def change_user_password(payload):
     save_user(updated)
     return public_user(updated)
 
+def create_password_reset_request(payload):
+    generic_message = "Se existir uma conta vinculada a esse usuário, a solicitação será registrada para análise do administrador."
+    login = str(payload.get("login", "") if isinstance(payload, dict) else "").strip()
+    request_code = generate_reset_code()
+    response = {
+        "ok": True,
+        "message": generic_message,
+        "requestCode": request_code,
+        "whatsappUrl": admin_whatsapp_reset_url(login),
+    }
+    if not login:
+        return response
+
+    user = find_user(login)
+    if not user:
+        write_access_log({
+            "userName": login,
+            "login": login,
+            "role": "",
+            "eventType": "reset_senha_solicitado",
+            "details": {"knownUser": False},
+        })
+        return response
+
+    now = datetime.now()
+    request = {
+        "id": token_hex(8),
+        "login": user.get("login", ""),
+        "userName": user.get("name", ""),
+        "role": user.get("role", ""),
+        "status": "PENDENTE",
+        "codeHash": hash_reset_code(request_code),
+        "createdAt": now.isoformat(timespec="seconds"),
+        "approvedAt": "",
+        "approvedBy": "",
+        "expiresAt": "",
+        "usedAt": "",
+        "decidedAt": "",
+        "decidedBy": "",
+    }
+    save_password_reset_request(request)
+    write_access_log({
+        "userName": user.get("name", login),
+        "login": user.get("login", login),
+        "role": user.get("role", ""),
+        "eventType": "reset_senha_solicitado",
+        "details": {"requestId": request["id"], "knownUser": True},
+    })
+    return response
+
+
+def list_password_reset_requests_for_master(payload):
+    authenticate_master(payload)
+    return [public_password_reset_request(request) for request in read_password_reset_requests()]
+
+
+def decide_password_reset_request(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("Dados invalidos.")
+    master_user = authenticate_master(payload)
+    request_id = str(payload.get("id", "")).strip()
+    decision = str(payload.get("decision", "")).strip().upper()
+    if decision not in ("APROVADO", "RECUSADO"):
+        raise ValueError("Decisao invalida.")
+
+    request = find_password_reset_request(request_id)
+    if not request:
+        raise ValueError("Solicitacao nao encontrada.")
+    if request.get("status") != "PENDENTE":
+        raise ValueError("Esta solicitacao ja foi encerrada.")
+
+    now = datetime.now()
+    updated = {
+        **request,
+        "status": decision,
+        "decidedAt": now.isoformat(timespec="seconds"),
+        "decidedBy": master_user.get("login", ""),
+    }
+    if decision == "APROVADO":
+        updated["approvedAt"] = updated["decidedAt"]
+        updated["approvedBy"] = master_user.get("login", "")
+        updated["expiresAt"] = (now + timedelta(minutes=30)).isoformat(timespec="seconds")
+
+    save_password_reset_request(updated)
+    write_access_log({
+        "userName": master_user.get("name", "Master"),
+        "login": master_user.get("login", ""),
+        "role": "master",
+        "eventType": "reset_senha_aprovado" if decision == "APROVADO" else "reset_senha_recusado",
+        "details": {"requestId": request_id, "targetLogin": request.get("login", "")},
+    })
+    return public_password_reset_request(updated)
+
+
+def complete_password_reset(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("Dados invalidos.")
+    login = str(payload.get("login", "")).strip()
+    request_code = str(payload.get("requestCode", "")).strip().upper()
+    new_password = str(payload.get("newPassword", ""))
+    if not login or not request_code or not new_password:
+        raise ValueError("Informe usuário, código de autorização e nova senha.")
+    if len(new_password) < 4:
+        raise ValueError("A senha deve ter pelo menos 4 caracteres.")
+    if new_password == "12345":
+        raise ValueError("Escolha uma senha diferente da provisória.")
+
+    user = find_user(login)
+    request = find_approved_password_reset_request(login, request_code)
+    if not user or not request:
+        raise ValueError("Autorização inválida, expirada ou já utilizada.")
+
+    salt = token_hex(8)
+    updated_user = {
+        **user,
+        "passwordHash": hash_password(new_password, salt),
+        "passwordSalt": salt,
+        "mustChangePassword": False,
+        "updatedAt": datetime.now().isoformat(),
+    }
+    save_user(updated_user)
+    now = datetime.now().isoformat(timespec="seconds")
+    save_password_reset_request({**request, "status": "CONCLUIDO", "usedAt": now})
+    write_access_log({
+        "userName": user.get("name", login),
+        "login": user.get("login", login),
+        "role": user.get("role", ""),
+        "eventType": "reset_senha_concluido",
+        "details": {"requestId": request.get("id", "")},
+    })
+    return public_user(updated_user)
+
 
 def authenticate_master(payload):
     master = payload.get("master") if isinstance(payload, dict) else {}
@@ -779,6 +974,55 @@ def read_users():
         return read_local_users_unlocked()
 
 
+def read_password_reset_requests():
+    if supabase_enabled():
+        try:
+            return read_password_reset_requests_supabase()
+        except (HTTPError, URLError, ValueError) as exc:
+            raise storage_error("ler solicitacoes de redefinicao no Supabase", exc) from exc
+    with LOCK:
+        return read_local_password_reset_requests_unlocked()
+
+
+def save_password_reset_request(request):
+    if supabase_enabled():
+        try:
+            save_password_reset_request_supabase(request)
+            return
+        except (HTTPError, URLError, ValueError) as exc:
+            raise storage_error("salvar solicitacao de redefinicao no Supabase", exc) from exc
+    with LOCK:
+        requests = read_local_password_reset_requests_unlocked()
+        requests = [current for current in requests if current.get("id") != request.get("id")]
+        requests.insert(0, request)
+        PASSWORD_RESETS_FILE.write_text(dumps(requests, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def find_password_reset_request(request_id):
+    return next((request for request in read_password_reset_requests() if request.get("id") == request_id), None)
+
+
+def find_approved_password_reset_request(login, request_code):
+    code_hash = hash_reset_code(request_code)
+    normalized_login = normalize(login)
+    now = datetime.now()
+    for request in read_password_reset_requests():
+        if normalize(request.get("login")) != normalized_login:
+            continue
+        if request.get("status") != "APROVADO" or request.get("usedAt"):
+            continue
+        if request.get("codeHash") != code_hash:
+            continue
+        expires_at = parse_iso_datetime(request.get("expiresAt", ""))
+        if not expires_at:
+            continue
+        if expires_at < now:
+            save_password_reset_request({**request, "status": "EXPIRADO"})
+            continue
+        return request
+    return None
+
+
 def save_user(user):
     if supabase_enabled():
         try:
@@ -866,6 +1110,16 @@ def read_local_users_unlocked():
         return []
     try:
         data = loads(USERS_FILE.read_text(encoding="utf-8"))
+    except ValueError:
+        return []
+    return data if isinstance(data, list) else []
+
+
+def read_local_password_reset_requests_unlocked():
+    if not PASSWORD_RESETS_FILE.exists():
+        return []
+    try:
+        data = loads(PASSWORD_RESETS_FILE.read_text(encoding="utf-8"))
     except ValueError:
         return []
     return data if isinstance(data, list) else []
@@ -1085,6 +1339,20 @@ def save_user_supabase(user):
     )
 
 
+def read_password_reset_requests_supabase():
+    rows = supabase_request(f"/rest/v1/{SUPABASE_PASSWORD_RESETS_TABLE}?select=*&order=created_at.desc&limit=300")
+    return [db_to_password_reset_request(row) for row in rows or []]
+
+
+def save_password_reset_request_supabase(request):
+    supabase_request(
+        f"/rest/v1/{SUPABASE_PASSWORD_RESETS_TABLE}?on_conflict=id",
+        method="POST",
+        body=password_reset_request_to_db(request),
+        extra_headers={"Prefer": "return=minimal,resolution=merge-duplicates"},
+    )
+
+
 def write_access_log(access):
     if not isinstance(access, dict):
         return
@@ -1170,6 +1438,22 @@ def hash_password(password, salt):
     return sha256(f"{salt}:{password}".encode("utf-8")).hexdigest()
 
 
+def generate_reset_code():
+    return f"RS-{token_hex(3).upper()}"
+
+
+def hash_reset_code(code):
+    return sha256(str(code or "").strip().upper().encode("utf-8")).hexdigest()
+
+
+def admin_whatsapp_reset_url(login):
+    message = (
+        "Olá, solicito autorização para redefinição da minha senha de acesso ao sistema.\n"
+        f"Usuário informado: {login or '[USUÁRIO]'}."
+    )
+    return f"https://wa.me/5519971620931?text={quote(message)}"
+
+
 def verify_password(password, user):
     salt = user.get("passwordSalt", "")
     password_hash = user.get("passwordHash", "")
@@ -1186,6 +1470,23 @@ def public_user(user):
         "mustChangePassword": bool(user.get("mustChangePassword")),
         "createdAt": user.get("createdAt", ""),
         "updatedAt": user.get("updatedAt", ""),
+    }
+
+
+def public_password_reset_request(request):
+    return {
+        "id": request.get("id", ""),
+        "login": request.get("login", ""),
+        "userName": request.get("userName", ""),
+        "role": request.get("role", ""),
+        "status": request.get("status", ""),
+        "createdAt": request.get("createdAt", ""),
+        "approvedAt": request.get("approvedAt", ""),
+        "approvedBy": request.get("approvedBy", ""),
+        "expiresAt": request.get("expiresAt", ""),
+        "usedAt": request.get("usedAt", ""),
+        "decidedAt": request.get("decidedAt", ""),
+        "decidedBy": request.get("decidedBy", ""),
     }
 
 
@@ -1207,6 +1508,20 @@ def parse_decimal(value, places=4):
         return round(float(text), places)
     except ValueError:
         return 0
+
+
+def parse_iso_datetime(value):
+    text = str(value or "").strip()
+    if not text:
+        return None
+    if text.endswith("Z"):
+        text = text[:-1]
+    if "+" in text:
+        text = text.split("+", 1)[0]
+    try:
+        return datetime.fromisoformat(text)
+    except ValueError:
+        return None
 
 
 def generate_order_id():
@@ -1386,6 +1701,42 @@ def db_to_user(row):
         "mustChangePassword": bool(row.get("must_change_password")),
         "createdAt": row.get("created_at", ""),
         "updatedAt": row.get("updated_at", ""),
+    }
+
+
+def password_reset_request_to_db(request):
+    return {
+        "id": request.get("id", ""),
+        "login": request.get("login", ""),
+        "user_name": request.get("userName", ""),
+        "role": request.get("role", ""),
+        "status": request.get("status", ""),
+        "code_hash": request.get("codeHash", ""),
+        "approved_by": request.get("approvedBy") or None,
+        "decided_by": request.get("decidedBy") or None,
+        "created_at": request.get("createdAt") or None,
+        "approved_at": request.get("approvedAt") or None,
+        "expires_at": request.get("expiresAt") or None,
+        "used_at": request.get("usedAt") or None,
+        "decided_at": request.get("decidedAt") or None,
+    }
+
+
+def db_to_password_reset_request(row):
+    return {
+        "id": row.get("id", ""),
+        "login": row.get("login", ""),
+        "userName": row.get("user_name", ""),
+        "role": row.get("role", ""),
+        "status": row.get("status", ""),
+        "codeHash": row.get("code_hash", ""),
+        "createdAt": row.get("created_at", ""),
+        "approvedAt": row.get("approved_at", ""),
+        "approvedBy": row.get("approved_by", ""),
+        "expiresAt": row.get("expires_at", ""),
+        "usedAt": row.get("used_at", ""),
+        "decidedAt": row.get("decided_at", ""),
+        "decidedBy": row.get("decided_by", ""),
     }
 
 
