@@ -306,6 +306,54 @@ class RequestHandler(SimpleHTTPRequestHandler):
                 self.send_json({"ok": False, "error": str(exc)}, status=503)
             return
 
+        if self.path == "/api/users/admin-update":
+            try:
+                payload = self.read_json_body()
+            except ValueError:
+                self.send_error(400, "JSON invalido")
+                return
+
+            try:
+                user = admin_update_user(payload)
+                self.send_json({"ok": True, "user": user})
+            except ValueError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=400)
+            except StorageError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=503)
+            return
+
+        if self.path == "/api/users/admin-status":
+            try:
+                payload = self.read_json_body()
+            except ValueError:
+                self.send_error(400, "JSON invalido")
+                return
+
+            try:
+                user = admin_set_user_status(payload)
+                self.send_json({"ok": True, "user": user})
+            except ValueError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=400)
+            except StorageError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=503)
+            return
+
+        if self.path == "/api/users/admin-delete":
+            try:
+                payload = self.read_json_body()
+            except ValueError:
+                self.send_error(400, "JSON invalido")
+                return
+
+            try:
+                deleted = admin_delete_user(payload)
+                self.send_json({"ok": True, "login": deleted})
+            except ValueError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=400)
+            except StorageError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=503)
+            return
+
         if self.path == "/api/users/management":
             try:
                 payload = self.read_json_body()
@@ -633,6 +681,8 @@ def authenticate_user(credentials):
     user = find_user(login)
     if not user or user.get("role") != role:
         return None
+    if user.get("active") is False:
+        return None
     if not verify_password(password, user):
         return None
     return public_user(user)
@@ -876,20 +926,126 @@ def admin_reset_user_password(payload):
     return public_user(updated)
 
 
+def admin_update_user(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("Dados invalidos.")
+    master_user = authenticate_master(payload)
+    login = str(payload.get("login", "")).strip()
+    name = str(payload.get("name", "")).strip()
+    role = str(payload.get("role", "")).strip()
+    origin = str(payload.get("origin", payload.get("sector", ""))).strip()
+    phone = only_digits(payload.get("phone", ""))
+
+    user = find_user(login)
+    if not user:
+        raise ValueError("Usuario nao encontrado.")
+    if not name or not origin:
+        raise ValueError("Preencha nome e setor/loja.")
+    if role not in ("master", "consultant", "collaborator"):
+        raise ValueError("Perfil invalido.")
+    if phone and not is_valid_mobile(phone):
+        raise ValueError("Informe um telefone valido com DDD e 9 digitos.")
+    if role == "collaborator":
+        if not phone:
+            raise ValueError("Colaborador precisa ter celular corporativo valido.")
+        validate_user_identity_link(name, phone, exclude_login=login)
+    if user.get("role") == "master" and role != "master" and would_remove_last_active_master(login):
+        raise ValueError("Nao e permitido remover o ultimo Master ativo do sistema.")
+
+    updated = {
+        **user,
+        "name": name,
+        "role": role,
+        "origin": origin,
+        "phone": phone,
+        "updatedAt": datetime.now().isoformat(),
+    }
+    save_user(updated)
+    write_access_log({
+        "userName": master_user.get("name", "Master"),
+        "login": master_user.get("login", ""),
+        "role": "master",
+        "eventType": "usuario_editado",
+        "details": {"targetLogin": login, "role": role},
+    })
+    return public_user(updated)
+
+
+def admin_set_user_status(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("Dados invalidos.")
+    master_user = authenticate_master(payload)
+    login = str(payload.get("login", "")).strip()
+    active = bool(payload.get("active"))
+    user = find_user(login)
+    if not user:
+        raise ValueError("Usuario nao encontrado.")
+    if normalize(login) == normalize(master_user.get("login")) and not active:
+        raise ValueError("Nao e permitido inativar o proprio usuario conectado.")
+    if user.get("role") == "master" and not active and would_remove_last_active_master(login):
+        raise ValueError("Nao e permitido inativar o ultimo Master ativo do sistema.")
+
+    updated = {
+        **user,
+        "active": active,
+        "updatedAt": datetime.now().isoformat(),
+    }
+    save_user(updated)
+    write_access_log({
+        "userName": master_user.get("name", "Master"),
+        "login": master_user.get("login", ""),
+        "role": "master",
+        "eventType": "usuario_ativado" if active else "usuario_inativado",
+        "details": {"targetLogin": login},
+    })
+    return public_user(updated)
+
+
+def admin_delete_user(payload):
+    if not isinstance(payload, dict):
+        raise ValueError("Dados invalidos.")
+    master_user = authenticate_master(payload)
+    login = str(payload.get("login", "")).strip()
+    user = find_user(login)
+    if not user:
+        raise ValueError("Usuario nao encontrado.")
+    if normalize(login) == normalize(master_user.get("login")):
+        raise ValueError("Nao e permitido excluir o proprio usuario conectado.")
+    if user.get("role") == "master" and would_remove_last_active_master(login):
+        raise ValueError("Nao e permitido excluir o ultimo Master ativo do sistema.")
+
+    delete_user(login)
+    write_access_log({
+        "userName": master_user.get("name", "Master"),
+        "login": master_user.get("login", ""),
+        "role": "master",
+        "eventType": "usuario_excluido",
+        "details": {"targetLogin": login, "targetRole": user.get("role", "")},
+    })
+    return login
+
+
 def create_management_user(payload):
     if not isinstance(payload, dict):
         raise ValueError("Dados invalidos.")
     master_user = authenticate_master(payload)
     name = str(payload.get("name", "")).strip()
     sector = str(payload.get("sector", "")).strip()
+    phone = only_digits(payload.get("phone", ""))
     password = str(payload.get("password", ""))
     role = str(payload.get("role", "consultant")).strip() or "consultant"
     login = str(payload.get("login", "")).strip() or name
 
     if not name or not sector or not password:
         raise ValueError("Preencha nome, setor e senha padrao.")
-    if role not in ("consultant", "master"):
-        raise ValueError("Perfil administrativo invalido.")
+    if role not in ("collaborator", "consultant", "master"):
+        raise ValueError("Perfil invalido.")
+    if phone and not is_valid_mobile(phone):
+        raise ValueError("Informe um telefone valido com DDD e 9 digitos.")
+    if role == "collaborator":
+        if not phone:
+            raise ValueError("Colaborador precisa ter celular corporativo valido.")
+        validate_user_identity_link(name, phone)
     if len(password) < 4:
         raise ValueError("A senha padrao deve ter pelo menos 4 caracteres.")
     if find_user(login):
@@ -901,11 +1057,12 @@ def create_management_user(payload):
         "login": login,
         "name": name,
         "role": role,
-        "phone": "",
+        "phone": phone,
         "origin": sector,
         "passwordHash": hash_password(password, salt),
         "passwordSalt": salt,
         "mustChangePassword": True,
+        "active": True,
         "createdAt": now,
         "updatedAt": now,
     }
@@ -940,6 +1097,7 @@ def create_user(payload):
         raise ValueError("A senha deve ter pelo menos 4 caracteres.")
     if find_user(login):
         raise ValueError("Este usuário já existe. Escolha outro login.")
+    validate_user_identity_link(name, phone)
 
     salt = token_hex(8)
     user = {
@@ -951,6 +1109,7 @@ def create_user(payload):
         "passwordHash": hash_password(password, salt),
         "passwordSalt": salt,
         "mustChangePassword": False,
+        "active": True,
         "createdAt": datetime.now().isoformat(),
         "updatedAt": datetime.now().isoformat(),
     }
@@ -1035,6 +1194,27 @@ def save_user(user):
         users = [current for current in users if normalize(current.get("login")) != normalize(user.get("login"))]
         users.append(user)
         USERS_FILE.write_text(dumps(users, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def delete_user(login):
+    if supabase_enabled():
+        try:
+            delete_user_supabase(login)
+            return
+        except (HTTPError, URLError, ValueError) as exc:
+            raise storage_error("excluir usuario no Supabase", exc) from exc
+    with LOCK:
+        users = read_local_users_unlocked()
+        users = [current for current in users if normalize(current.get("login")) != normalize(login)]
+        USERS_FILE.write_text(dumps(users, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def would_remove_last_active_master(target_login):
+    active_masters = [
+        user for user in read_users()
+        if user.get("role") == "master" and user.get("active") is not False and normalize(user.get("login")) != normalize(target_login)
+    ]
+    return not active_masters
 
 
 def ensure_default_users():
@@ -1339,6 +1519,14 @@ def save_user_supabase(user):
     )
 
 
+def delete_user_supabase(login):
+    supabase_request(
+        f"/rest/v1/{SUPABASE_USERS_TABLE}?login=eq.{quote(login, safe='')}",
+        method="DELETE",
+        extra_headers={"Prefer": "return=minimal"},
+    )
+
+
 def read_password_reset_requests_supabase():
     rows = supabase_request(f"/rest/v1/{SUPABASE_PASSWORD_RESETS_TABLE}?select=*&order=created_at.desc&limit=300")
     return [db_to_password_reset_request(row) for row in rows or []]
@@ -1429,6 +1617,7 @@ def default_user_record(user):
         "passwordHash": hash_password(user["password"], salt),
         "passwordSalt": salt,
         "mustChangePassword": bool(user.get("mustChangePassword", False)),
+        "active": True,
         "createdAt": now,
         "updatedAt": now,
     }
@@ -1468,6 +1657,7 @@ def public_user(user):
         "phone": user.get("phone", ""),
         "origin": user.get("origin", ""),
         "mustChangePassword": bool(user.get("mustChangePassword")),
+        "active": user.get("active") is not False,
         "createdAt": user.get("createdAt", ""),
         "updatedAt": user.get("updatedAt", ""),
     }
@@ -1686,6 +1876,7 @@ def user_to_db(user):
         "password_hash": user.get("passwordHash", ""),
         "password_salt": user.get("passwordSalt", ""),
         "must_change_password": bool(user.get("mustChangePassword")),
+        "active": user.get("active") is not False,
     }
 
 
@@ -1699,6 +1890,7 @@ def db_to_user(row):
         "passwordHash": row.get("password_hash", ""),
         "passwordSalt": row.get("password_salt", ""),
         "mustChangePassword": bool(row.get("must_change_password")),
+        "active": row.get("active") is not False,
         "createdAt": row.get("created_at", ""),
         "updatedAt": row.get("updated_at", ""),
     }
@@ -1750,10 +1942,13 @@ def normalize_identity(value):
     return "".join(ch for ch in decomposed if category(ch) != "Mn")
 
 
-def validate_user_identity_link(name, phone):
+def validate_user_identity_link(name, phone, exclude_login=""):
     identity_name = normalize_identity(name)
     identity_phone = only_digits(phone)
+    excluded = normalize(exclude_login)
     for user in read_users():
+        if excluded and normalize(user.get("login")) == excluded:
+            continue
         if user.get("role") != "collaborator":
             continue
         existing_name = normalize_identity(user.get("name", ""))

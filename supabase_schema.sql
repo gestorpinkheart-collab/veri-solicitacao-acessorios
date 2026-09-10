@@ -172,12 +172,14 @@ create table if not exists public.accessory_users (
   password_hash text not null,
   password_salt text not null,
   must_change_password boolean not null default true,
+  active boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
 alter table public.accessory_users add column if not exists phone text;
 alter table public.accessory_users add column if not exists origin text;
+alter table public.accessory_users add column if not exists active boolean not null default true;
 alter table public.accessory_users drop constraint if exists accessory_users_role_check;
 alter table public.accessory_users add constraint accessory_users_role_check check (role in ('master', 'consultant', 'collaborator'));
 

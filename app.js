@@ -100,6 +100,7 @@ let masterCredential = null;
 let masterDatabase = null;
 let pendingUser = null;
 let isSubmittingOrder = false;
+let editingManagementUserLogin = "";
 let expandedOrderIds = new Set();
 let activeLoginMode = "common";
 let collaboratorAccessMode = "login";
@@ -229,7 +230,10 @@ const elements = {
   managementUserLogin: document.querySelector("#managementUserLogin"),
   managementUserName: document.querySelector("#managementUserName"),
   managementUserSector: document.querySelector("#managementUserSector"),
+  managementUserPhone: document.querySelector("#managementUserPhone"),
   managementUserPassword: document.querySelector("#managementUserPassword"),
+  managementUserSubmit: document.querySelector("#managementUserSubmit"),
+  cancelManagementUserEdit: document.querySelector("#cancelManagementUserEdit"),
   masterUsersBody: document.querySelector("#masterUsersBody"),
   passwordResetRequestsBody: document.querySelector("#passwordResetRequestsBody"),
   refreshDatabase: document.querySelector("#refreshDatabase"),
@@ -310,6 +314,7 @@ async function init() {
   elements.refreshUsers?.addEventListener("click", loadMasterUsers);
   elements.refreshPasswordResets?.addEventListener("click", loadPasswordResetRequests);
   elements.managementUserForm?.addEventListener("submit", handleManagementUserSubmit);
+  elements.cancelManagementUserEdit?.addEventListener("click", resetManagementUserFormMode);
   elements.refreshDatabase?.addEventListener("click", loadMasterDatabase);
   elements.exportDatabase?.addEventListener("click", exportMasterDatabase);
   elements.databaseTableSelect?.addEventListener("change", renderDatabasePreview);
@@ -1214,6 +1219,7 @@ function databaseColumns(table) {
       { key: "origin", label: "Origem" },
       { key: "phone", label: "Celular" },
       { key: "mustChangePassword", label: "Troca senha" },
+      { key: "active", label: "Ativo" },
     ],
     prices: [
       { key: "model", label: "Modelo" },
@@ -1842,6 +1848,10 @@ function accessEventLabel(eventType) {
     senha_provisoria: "Senha provis\u00f3ria",
     usuario_gestao_criado: "Usu\u00e1rio Gest\u00e3o criado",
     usuario_admin_criado: "Usu\u00e1rio administrativo criado",
+    usuario_editado: "Usu\u00e1rio editado",
+    usuario_ativado: "Usu\u00e1rio ativado",
+    usuario_inativado: "Usu\u00e1rio inativado",
+    usuario_excluido: "Usu\u00e1rio exclu\u00eddo",
     reset_senha_solicitado: "Redefini\u00e7\u00e3o solicitada",
     reset_senha_aprovado: "Redefini\u00e7\u00e3o aprovada",
     reset_senha_recusado: "Redefini\u00e7\u00e3o recusada",
@@ -1887,6 +1897,7 @@ function renderMasterUsers() {
   masterUsers.forEach((user) => {
     const row = document.createElement("tr");
     const needsChange = Boolean(user.mustChangePassword);
+    const isActive = user.active !== false;
     row.innerHTML = `
       <td>${user.login}</td>
       <td>${user.name}</td>
@@ -1895,14 +1906,46 @@ function renderMasterUsers() {
       <td>${formatPhone(user.phone) || ""}</td>
       <td>${formatDateTime(user.createdAt)}</td>
       <td>${formatDateTime(user.updatedAt)}</td>
-      <td><span class="pill ${needsChange ? "urgent" : ""}">${needsChange ? "Troca pendente" : "Ativo"}</span></td>
+      <td><span class="pill ${!isActive || needsChange ? "urgent" : ""}">${!isActive ? "Inativo" : needsChange ? "Troca pendente" : "Ativo"}</span></td>
       <td>
-        <button class="ghost-button small" type="button" data-reset-user="${user.login}" title="Definir senha provis\u00f3ria">Senha provis\u00f3ria</button>
+        <div class="inline-actions">
+          <button class="ghost-button small" type="button" data-edit-user="${user.login}" title="Editar usu\u00e1rio">Editar</button>
+          <button class="ghost-button small" type="button" data-toggle-user="${user.login}" title="${isActive ? "Inativar usu\u00e1rio" : "Ativar usu\u00e1rio"}">${isActive ? "Inativar" : "Ativar"}</button>
+          <button class="ghost-button small" type="button" data-reset-user="${user.login}" title="Definir senha provis\u00f3ria">Senha</button>
+          <button class="ghost-button small danger" type="button" data-delete-user="${user.login}" title="Excluir usu\u00e1rio">Excluir</button>
+        </div>
       </td>
     `;
+    row.querySelector("[data-edit-user]").addEventListener("click", () => editMasterUser(user.login));
+    row.querySelector("[data-toggle-user]").addEventListener("click", () => toggleMasterUserStatus(user.login));
     row.querySelector("[data-reset-user]").addEventListener("click", () => resetUserPassword(user.login));
+    row.querySelector("[data-delete-user]").addEventListener("click", () => deleteMasterUser(user.login));
     elements.masterUsersBody.append(row);
   });
+}
+
+function setManagementUserFormMode(user = null) {
+  editingManagementUserLogin = user?.login || "";
+  if (elements.managementUserLogin) {
+    elements.managementUserLogin.readOnly = Boolean(user);
+    elements.managementUserLogin.value = user?.login || "";
+  }
+  if (elements.managementUserRole) elements.managementUserRole.value = user?.role || "consultant";
+  if (elements.managementUserName) elements.managementUserName.value = user?.name || "";
+  if (elements.managementUserSector) elements.managementUserSector.value = user?.origin || "";
+  if (elements.managementUserPhone) elements.managementUserPhone.value = user?.phone ? formatPhone(user.phone) : "";
+  if (elements.managementUserPassword) {
+    elements.managementUserPassword.value = "";
+    elements.managementUserPassword.required = !user;
+    elements.managementUserPassword.placeholder = user ? "Use o bot\u00e3o Senha para redefinir" : "Senha provis\u00f3ria";
+  }
+  if (elements.managementUserSubmit) elements.managementUserSubmit.textContent = user ? "Salvar altera\u00e7\u00f5es" : "Criar usu\u00e1rio";
+  if (elements.cancelManagementUserEdit) elements.cancelManagementUserEdit.hidden = !user;
+}
+
+function resetManagementUserFormMode() {
+  elements.managementUserForm?.reset();
+  setManagementUserFormMode(null);
 }
 
 function renderPasswordResetRequests() {
@@ -2025,6 +2068,67 @@ async function resetUserPassword(login) {
   }
 }
 
+async function editMasterUser(login) {
+  if (!isMasterUser() || !masterCredential) return;
+  const user = masterUsers.find((item) => item.login === login);
+  if (!user) return;
+  setManagementUserFormMode(user);
+  elements.managementUserForm?.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+async function toggleMasterUserStatus(login) {
+  if (!isMasterUser() || !masterCredential) return;
+  const user = masterUsers.find((item) => item.login === login);
+  if (!user) return;
+  const nextActive = user.active === false;
+  const action = nextActive ? "ativar" : "inativar";
+  if (!confirm(`Confirmar ${action} o usu\u00e1rio ${user.name || login}?`)) return;
+
+  try {
+    const response = await fetch("/api/users/admin-status", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        master: masterCredential,
+        login,
+        active: nextActive,
+      }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || "N\u00e3o foi poss\u00edvel alterar o status do usu\u00e1rio.");
+    masterUsers = masterUsers.map((item) => (item.login === payload.user.login ? payload.user : item));
+    renderMasterUsers();
+    alert(nextActive ? "Usu\u00e1rio ativado." : "Usu\u00e1rio inativado.");
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
+async function deleteMasterUser(login) {
+  if (!isMasterUser() || !masterCredential) return;
+  const user = masterUsers.find((item) => item.login === login);
+  if (!user) return;
+  if (!confirm(`Excluir definitivamente o usu\u00e1rio ${user.name || login}?`)) return;
+
+  try {
+    const response = await fetch("/api/users/admin-delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        master: masterCredential,
+        login,
+      }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.error || "N\u00e3o foi poss\u00edvel excluir o usu\u00e1rio.");
+    masterUsers = masterUsers.filter((item) => item.login !== payload.login);
+    renderMasterUsers();
+    alert("Usu\u00e1rio exclu\u00eddo.");
+  } catch (error) {
+    alert(error.message);
+  }
+}
+
 async function handleManagementUserSubmit(event) {
   event.preventDefault();
   if (!isMasterUser() || !masterCredential) return;
@@ -2033,20 +2137,22 @@ async function handleManagementUserSubmit(event) {
   const login = elements.managementUserLogin.value.trim();
   const name = elements.managementUserName.value.trim();
   const sector = elements.managementUserSector.value.trim();
+  const phone = elements.managementUserPhone.value.trim();
   const password = elements.managementUserPassword.value.trim();
+  const wasEditing = Boolean(editingManagementUserLogin);
 
-  if (!name || !sector || !password) {
-    alert("Preencha nome, setor e senha padr\u00e3o.");
+  if (!name || !sector || (!wasEditing && !password)) {
+    alert(wasEditing ? "Preencha nome e setor." : "Preencha nome, setor e senha padr\u00e3o.");
     return;
   }
 
-  if (password.length < 4) {
+  if (!wasEditing && password.length < 4) {
     alert("A senha padr\u00e3o deve ter pelo menos 4 caracteres.");
     return;
   }
 
   try {
-    const response = await fetch("/api/users/management", {
+    const response = await fetch(wasEditing ? "/api/users/admin-update" : "/api/users/management", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -2055,15 +2161,16 @@ async function handleManagementUserSubmit(event) {
         login,
         name,
         sector,
+        phone,
         password,
       }),
     });
     const payload = await response.json();
-    if (!response.ok) throw new Error(payload.error || "N\u00e3o foi poss\u00edvel criar o usu\u00e1rio.");
-    elements.managementUserForm.reset();
+    if (!response.ok) throw new Error(payload.error || (wasEditing ? "N\u00e3o foi poss\u00edvel editar o usu\u00e1rio." : "N\u00e3o foi poss\u00edvel criar o usu\u00e1rio."));
+    resetManagementUserFormMode();
     masterUsers = [payload.user, ...masterUsers.filter((item) => item.login !== payload.user.login)];
     renderMasterUsers();
-    alert("Usu\u00e1rio criado. No primeiro acesso, ele dever\u00e1 trocar a senha.");
+    alert(wasEditing ? "Usu\u00e1rio atualizado." : "Usu\u00e1rio criado. No primeiro acesso, ele dever\u00e1 trocar a senha.");
   } catch (error) {
     alert(error.message);
   }

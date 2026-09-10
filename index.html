@@ -630,6 +630,7 @@
                 <label>
                   Perfil
                   <select id="managementUserRole" required>
+                    <option value="collaborator">Colaborador</option>
                     <option value="consultant">Gest&atilde;o de Pedidos</option>
                     <option value="master">Master</option>
                   </select>
@@ -647,10 +648,15 @@
                   <input id="managementUserSector" type="text" placeholder="F&aacute;brica / Gest&atilde;o" required>
                 </label>
                 <label>
+                  Celular
+                  <input id="managementUserPhone" type="tel" placeholder="(11) 99999-9999">
+                </label>
+                <label>
                   Senha padr&atilde;o
                   <input id="managementUserPassword" type="password" minlength="4" placeholder="Senha provis&oacute;ria" autocomplete="new-password" required>
                 </label>
-                <button class="primary-button" type="submit">Criar usu&aacute;rio</button>
+                <button class="primary-button" id="managementUserSubmit" type="submit">Criar usu&aacute;rio</button>
+                <button class="ghost-button" id="cancelManagementUserEdit" type="button" hidden>Cancelar edi&ccedil;&atilde;o</button>
               </form>
               <div class="table-wrap compact-table">
                 <table class="report-table">
