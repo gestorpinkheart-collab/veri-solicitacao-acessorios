@@ -2726,7 +2726,11 @@ function printGalvanoplastyProtocol(id) {
   const sentAt = galvanoplasty.sentAt ? new Date(galvanoplasty.sentAt) : new Date();
   const sentBy = galvanoplasty.sentBy || currentSession?.name || "";
   const deliveryDate = galvanoplasty.deliveryDate || "";
-  const rows = compactGalvanoplastyItems(order);
+  const bathTotals = galvanoplastyBathTotals(order);
+  const summaryGroups = compactGalvanoplastySummary(order);
+  const summaryRows = summaryGroups.slice(0, 8);
+  const remainingGroups = Math.max(0, summaryGroups.length - summaryRows.length);
+  const totalPieces = countPieces([order]);
   const via = (label) => `
     <section class="copy">
       <header>
@@ -2744,12 +2748,18 @@ function printGalvanoplastyProtocol(id) {
         <span><strong>Origem</strong>${order.origin || "-"}</span>
         <span><strong>Data de entrega</strong>${formatDate(deliveryDate) || "____/____/________"}</span>
       </div>
+      <div class="totals">
+        <span><strong>Total geral</strong>${totalPieces} pe\u00e7as</span>
+        ${bathTotals.map((item) => `<span><strong>${item.bath}</strong>${item.quantity} pe\u00e7as</span>`).join("")}
+      </div>
       <table>
-        <thead><tr><th>Item</th><th>Tamanho</th><th>Banho</th><th>Qtd.</th></tr></thead>
+        <thead><tr><th>Resumo para controle interno</th><th>Banho</th><th>Qtd.</th></tr></thead>
         <tbody>
-          ${rows.map((item) => `<tr><td>${item.model}</td><td>${item.size}</td><td>${item.bath}</td><td>${item.quantity}</td></tr>`).join("")}
+          ${summaryRows.map((item) => `<tr><td>${item.label}</td><td>${item.bath}</td><td>${item.quantity}</td></tr>`).join("")}
+          ${remainingGroups ? `<tr><td colspan="3">+ ${remainingGroups} grupo(s) adicional(is) detalhados no pedido digital.</td></tr>` : ""}
         </tbody>
       </table>
+      <p class="note">Controle interno por pedido. Confer\u00eancia detalhada deve ser feita no sistema pelo n\u00famero do pedido.</p>
       <div class="signatures">
         <div class="line">Assinatura de quem enviou</div>
         <div class="line">Data de retorno: ____/____/________</div>
@@ -2766,20 +2776,24 @@ function printGalvanoplastyProtocol(id) {
           @page { size: A4 portrait; margin: 8mm; }
           * { box-sizing: border-box; }
           body { font-family: Arial, sans-serif; color: #1d2b26; margin: 0; }
-          .copy { height: 138mm; padding: 8mm 7mm; border: 1px solid #92ACA0; page-break-inside: avoid; }
+          .copy { height: 136mm; padding: 7mm; border: 1px solid #92ACA0; overflow: hidden; page-break-inside: avoid; }
           .copy + .copy { margin-top: 5mm; }
-          header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #92ACA0; padding-bottom: 5mm; margin-bottom: 5mm; }
-          .brand { font-size: 24px; letter-spacing: 1px; color: #2f4d40; }
-          h1 { font-size: 15px; margin: 2mm 0 0; text-transform: uppercase; }
+          header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #92ACA0; padding-bottom: 4mm; margin-bottom: 4mm; }
+          .brand { font-size: 22px; letter-spacing: 1px; color: #2f4d40; }
+          h1 { font-size: 13px; margin: 2mm 0 0; text-transform: uppercase; }
           header span { font-size: 13px; font-weight: 700; background: #e8f0ec; border-radius: 999px; padding: 7px 12px; }
-          .meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3mm; margin-bottom: 5mm; font-size: 11px; }
-          .meta span { border: 1px solid #d5e0db; border-radius: 6px; padding: 6px; min-height: 32px; }
+          .meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2.5mm; margin-bottom: 3mm; font-size: 10px; }
+          .meta span, .totals span { border: 1px solid #d5e0db; border-radius: 6px; padding: 5px; min-height: 28px; }
           .meta strong { display: block; font-size: 9px; color: #597066; text-transform: uppercase; margin-bottom: 2px; }
-          table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
-          th, td { border-bottom: 1px solid #d5e0db; padding: 5px 6px; text-align: left; }
+          .totals { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2.5mm; margin-bottom: 4mm; font-size: 11px; font-weight: 700; }
+          .totals strong { display: block; font-size: 9px; color: #597066; text-transform: uppercase; margin-bottom: 2px; }
+          table { width: 100%; border-collapse: collapse; font-size: 10px; }
+          th, td { border-bottom: 1px solid #d5e0db; padding: 4px 5px; text-align: left; }
           th { background: #edf3f0; font-size: 9px; text-transform: uppercase; }
-          th:last-child, td:last-child { text-align: right; width: 52px; }
-          .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 15mm; margin-top: 12mm; font-size: 11px; }
+          th:nth-child(2), td:nth-child(2) { width: 32mm; }
+          th:last-child, td:last-child { text-align: right; width: 22mm; }
+          .note { font-size: 9.5px; color: #597066; margin: 4mm 0 0; }
+          .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 15mm; margin-top: 10mm; font-size: 10px; }
           .line { border-top: 1px solid #1d2b26; padding-top: 5px; }
         </style>
       </head>
@@ -2800,15 +2814,24 @@ function printGalvanoplastyProtocol(id) {
   printWindow.print();
 }
 
-function compactGalvanoplastyItems(order) {
+function compactGalvanoplastySummary(order) {
   const grouped = new Map();
   (order.items || []).forEach((item) => {
-    const key = [item.model, item.size, item.bath].join("||");
-    const current = grouped.get(key) || { model: item.model, size: item.size, bath: item.bath, quantity: 0 };
+    const key = [item.model, item.bath].join("||");
+    const current = grouped.get(key) || { label: item.model, bath: item.bath, quantity: 0 };
     current.quantity += Number(item.quantity || 0);
     grouped.set(key, current);
   });
-  return [...grouped.values()].sort((a, b) => String(a.model).localeCompare(String(b.model)) || String(a.size).localeCompare(String(b.size)));
+  return [...grouped.values()].sort((a, b) => String(a.label).localeCompare(String(b.label)) || String(a.bath).localeCompare(String(b.bath)));
+}
+
+function galvanoplastyBathTotals(order) {
+  const grouped = new Map();
+  (order.items || []).forEach((item) => {
+    const bath = item.bath || "Sem banho";
+    grouped.set(bath, (grouped.get(bath) || 0) + Number(item.quantity || 0));
+  });
+  return [...grouped.entries()].map(([bath, quantity]) => ({ bath, quantity })).sort((a, b) => String(a.bath).localeCompare(String(b.bath)));
 }
 
 function printCollaboratorOrder(id) {
