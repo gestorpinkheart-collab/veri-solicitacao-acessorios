@@ -1942,7 +1942,10 @@ function orderSortByStatus(a, b) {
   };
   const statusDiff = (order[normalizeStatus(a.status)] ?? 9) - (order[normalizeStatus(b.status)] ?? 9);
   if (statusDiff) return statusDiff;
-  return String(b.id || "").localeCompare(String(a.id || ""));
+  if (normalizeStatus(a.status) === "Pedido Recebido") {
+    return String(b.id || "").localeCompare(String(a.id || ""));
+  }
+  return String(a.id || "").localeCompare(String(b.id || ""));
 }
 
 function statusClass(status) {
