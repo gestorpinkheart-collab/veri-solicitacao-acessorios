@@ -1162,6 +1162,14 @@ select:disabled {
   font-weight: 700;
 }
 
+.order-compact-meta .galvanoplasty-badge {
+  color: #2f4d40;
+  background: rgba(146, 172, 160, 0.18);
+  border: 1px solid rgba(47, 77, 64, 0.18);
+  border-radius: 999px;
+  padding: 5px 10px;
+}
+
 .order-kpis {
   justify-content: flex-end;
   flex-wrap: wrap;

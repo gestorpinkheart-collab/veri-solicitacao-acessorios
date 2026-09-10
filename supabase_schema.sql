@@ -19,6 +19,7 @@ create table if not exists public.accessory_orders (
   notes text default '',
   items jsonb not null default '[]'::jsonb,
   history jsonb not null default '[]'::jsonb,
+  galvanoplasty jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -28,6 +29,9 @@ add column if not exists history jsonb not null default '[]'::jsonb;
 
 alter table public.accessory_orders
 add column if not exists due_date date;
+
+alter table public.accessory_orders
+add column if not exists galvanoplasty jsonb not null default '{}'::jsonb;
 
 alter table public.accessory_orders drop constraint if exists accessory_orders_status_check;
 alter table public.accessory_orders add constraint accessory_orders_status_check check (

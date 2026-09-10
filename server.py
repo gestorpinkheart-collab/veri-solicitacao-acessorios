@@ -1736,6 +1736,8 @@ def append_history(order, action, actor="", actor_role="", details=None):
 def history_action(updates):
     if "status" in updates:
         return f"Status alterado para {updates.get('status')}"
+    if "galvanoplasty" in updates:
+        return "Envio para Galvanoplastia registrado"
     if "dueDate" in updates:
         return f"Previsao de entrega alterada para {updates.get('dueDate') or 'sem previsao'}"
     if "items" in updates:
@@ -1747,7 +1749,7 @@ def allowed_order_updates(updates):
     if not isinstance(updates, dict):
         return {}
     allowed = {}
-    for key in ("requestDate", "dueDate", "requester", "phone", "origin", "priority", "status", "notes", "items", "history"):
+    for key in ("requestDate", "dueDate", "requester", "phone", "origin", "priority", "status", "notes", "items", "history", "galvanoplasty"):
         if key in updates:
             allowed[key] = updates[key]
     if "phone" in allowed:
@@ -1769,6 +1771,7 @@ def updates_to_db(updates, include_history=True):
         "notes": "notes",
         "items": "items",
         "history": "history",
+        "galvanoplasty": "galvanoplasty",
     }
     for key, value in allowed.items():
         if key == "history" and not include_history:
@@ -1789,6 +1792,7 @@ def order_to_db(order, include_history=True):
         "status": order.get("status", ""),
         "notes": order.get("notes", ""),
         "items": order.get("items", []),
+        "galvanoplasty": order.get("galvanoplasty") or {},
     }
     if include_history:
         data["history"] = order.get("history", [])
@@ -1808,6 +1812,7 @@ def db_to_order(row):
         "notes": row.get("notes", ""),
         "items": row.get("items") or [],
         "history": row.get("history") or [],
+        "galvanoplasty": row.get("galvanoplasty") or {},
     }
 
 

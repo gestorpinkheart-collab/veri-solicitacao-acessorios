@@ -2450,6 +2450,8 @@ function buildOrderCard(order, { mode }) {
   const summaryItems = items.slice(0, 4);
   const hiddenItems = Math.max(0, items.length - summaryItems.length);
   const isManagement = mode === "management";
+  const galvanoplasty = order.galvanoplasty || {};
+  const galvanoplastySent = Boolean(galvanoplasty.sentAt);
 
   card.className = `order-card compact-order-card ${statusClass(displayStatus)} ${isExpanded ? "expanded-order" : ""}`;
   card.innerHTML = `
@@ -2476,6 +2478,7 @@ function buildOrderCard(order, { mode }) {
       <span>${order.origin}</span>
       <span>${formatPhone(order.phone) || "Sem celular"}</span>
       <span>${items.length} item(ns)</span>
+      ${galvanoplastySent ? `<span class="galvanoplasty-badge">Galvanoplastia enviada: ${formatDateTime(galvanoplasty.sentAt)}</span>` : ""}
     </div>
     ${isExpanded ? `
       <div class="order-expanded-body">
@@ -2519,6 +2522,16 @@ function buildOrderCard(order, { mode }) {
             <path d="M12.1 3a8.9 8.9 0 0 0-7.6 13.5L3.4 21l4.6-1.1A8.9 8.9 0 1 0 12.1 3Zm0 2a6.9 6.9 0 1 1-3.5 12.8l-.4-.2-2.1.5.5-2-.3-.4A6.9 6.9 0 0 1 12.1 5Zm-3 3.6c-.2 0-.5.1-.7.3-.2.2-.8.8-.8 1.9s.8 2.2.9 2.4c.1.1 1.6 2.6 4 3.5 2 .8 2.4.6 2.8.6.4 0 1.4-.6 1.6-1.1.2-.6.2-1 .1-1.1-.1-.1-.2-.2-.5-.3l-1.6-.8c-.2-.1-.4-.1-.6.2l-.7.9c-.1.2-.3.2-.5.1-.3-.1-1.1-.4-2-1.2-.7-.7-1.2-1.5-1.4-1.7-.1-.2 0-.4.1-.5l.4-.5c.1-.2.2-.3.3-.5.1-.2.1-.4 0-.5l-.7-1.7c-.2-.4-.4-.4-.7-.4Z"/>
           </svg>
         </a>` : ""}
+        ${isManagement ? `<button class="action-button galvanoplasty-action" type="button" data-galvanoplasty-send="${order.id}" title="Registrar envio para Galvanoplastia" aria-label="Registrar envio para Galvanoplastia">
+          <svg viewBox="0 0 24 24" focusable="false">
+            <path d="M4 4h10l6 6v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm9 1.5V11h5.5L13 5.5ZM6 13h10v2H6v-2Zm0 4h8v2H6v-2Z"/>
+          </svg>
+        </button>
+        <button class="action-button print-action" type="button" data-galvanoplasty-print="${order.id}" title="Imprimir controle de Galvanoplastia" aria-label="Imprimir controle de Galvanoplastia">
+          <svg viewBox="0 0 24 24" focusable="false">
+            <path d="M6 2h9l5 5v6h-2V8h-4V4H6v16h6v2H4V4c0-1.1.9-2 2-2Zm9.5 14.5 2 2L22 14l-1.4-1.4-3.1 3.1-2-2-1.5 1.4Zm-8.5-6h8v2H7v-2Zm0 4h5v2H7v-2Z"/>
+          </svg>
+        </button>` : ""}
         <button class="action-button print-action" type="button" data-print-order="${order.id}" title="Imprimir pedido" aria-label="Imprimir pedido">
           <svg viewBox="0 0 24 24" focusable="false">
             <path d="M7 3h10v5H7V3Zm-2 7h14a3 3 0 0 1 3 3v5h-4v3H6v-3H2v-5a3 3 0 0 1 3-3Zm3 7v2h8v-2H8Zm10-3a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"/>
@@ -2538,6 +2551,8 @@ function buildOrderCard(order, { mode }) {
   card.querySelector("[data-order-due-date]")?.addEventListener("change", (event) => updateDueDate(order.id, event.target.value));
   card.querySelector("[data-edit]")?.addEventListener("click", () => editOrder(order.id));
   card.querySelector("[data-clone]")?.addEventListener("click", () => cloneOrder(order.id));
+  card.querySelector("[data-galvanoplasty-send]")?.addEventListener("click", () => registerGalvanoplastyShipment(order.id));
+  card.querySelector("[data-galvanoplasty-print]")?.addEventListener("click", () => printGalvanoplastyProtocol(order.id));
   card.querySelector("[data-print-order]")?.addEventListener("click", () => printCollaboratorOrder(order.id));
   card.querySelector("[data-delete]")?.addEventListener("click", () => deleteOrder(order.id));
   return card;
@@ -2662,6 +2677,138 @@ function showCollaboratorOrderDetail(id) {
   elements.collaboratorOrderDetail.querySelector("[data-detail-clone]")?.addEventListener("click", () => cloneOrder(order.id));
   elements.collaboratorOrderDetail.querySelector("[data-detail-print]")?.addEventListener("click", () => printCollaboratorOrder(order.id));
   elements.collaboratorOrderDetail.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+async function registerGalvanoplastyShipment(id) {
+  if (!isInternalUser()) return;
+  const order = orders.find((item) => item.id === id);
+  if (!order) return;
+
+  const deliveryDate = prompt("Data de entrega prevista/real para retorno da Galvanoplastia (AAAA-MM-DD):", order.galvanoplasty?.deliveryDate || order.dueDate || "");
+  if (deliveryDate === null) return;
+  const trimmedDeliveryDate = deliveryDate.trim();
+  if (trimmedDeliveryDate && !/^\d{4}-\d{2}-\d{2}$/.test(trimmedDeliveryDate)) {
+    alert("Informe a data no formato AAAA-MM-DD ou deixe em branco.");
+    return;
+  }
+
+  const now = new Date();
+  const galvanoplasty = {
+    ...(order.galvanoplasty || {}),
+    sent: true,
+    sentAt: now.toISOString(),
+    sentBy: currentSession?.name || "Sistema",
+    sentByLogin: currentSession?.login || "",
+    deliveryDate: trimmedDeliveryDate,
+  };
+
+  try {
+    const updated = await patchOrder(id, {
+      galvanoplasty,
+      status: "Em prepara\u00e7\u00e3o de banho (galvanoplastia)",
+      updatedBy: currentSession?.name || "",
+      updatedByRole: currentSession?.role || "",
+    });
+    orders = orders.map((item) => (item.id === id ? { ...item, ...updated } : item));
+    render();
+    if (confirm("Envio registrado. Deseja imprimir o controle em duas vias agora?")) {
+      printGalvanoplastyProtocol(id);
+    }
+  } catch (error) {
+    alert(error.message || "N\u00e3o foi poss\u00edvel registrar o envio para Galvanoplastia.");
+  }
+}
+
+function printGalvanoplastyProtocol(id) {
+  const order = getVisibleOrders().find((item) => item.id === id) || orders.find((item) => item.id === id);
+  if (!order) return;
+  const galvanoplasty = order.galvanoplasty || {};
+  const sentAt = galvanoplasty.sentAt ? new Date(galvanoplasty.sentAt) : new Date();
+  const sentBy = galvanoplasty.sentBy || currentSession?.name || "";
+  const deliveryDate = galvanoplasty.deliveryDate || "";
+  const rows = compactGalvanoplastyItems(order);
+  const via = (label) => `
+    <section class="copy">
+      <header>
+        <div>
+          <strong class="brand">VERI</strong>
+          <h1>Controle de envio para Galvanoplastia</h1>
+        </div>
+        <span>Via: ${label}</span>
+      </header>
+      <div class="meta">
+        <span><strong>Pedido</strong>${order.id}</span>
+        <span><strong>Data de envio</strong>${formatDate(sentAt.toISOString().slice(0, 10))}</span>
+        <span><strong>Hora</strong>${sentAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</span>
+        <span><strong>Enviado por</strong>${sentBy}</span>
+        <span><strong>Origem</strong>${order.origin || "-"}</span>
+        <span><strong>Data de entrega</strong>${formatDate(deliveryDate) || "____/____/________"}</span>
+      </div>
+      <table>
+        <thead><tr><th>Item</th><th>Tamanho</th><th>Banho</th><th>Qtd.</th></tr></thead>
+        <tbody>
+          ${rows.map((item) => `<tr><td>${item.model}</td><td>${item.size}</td><td>${item.bath}</td><td>${item.quantity}</td></tr>`).join("")}
+        </tbody>
+      </table>
+      <div class="signatures">
+        <div class="line">Assinatura de quem enviou</div>
+        <div class="line">Data de retorno: ____/____/________</div>
+      </div>
+    </section>
+  `;
+  const html = `
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <title>Galvanoplastia - ${order.id}</title>
+        <style>
+          @page { size: A4 portrait; margin: 8mm; }
+          * { box-sizing: border-box; }
+          body { font-family: Arial, sans-serif; color: #1d2b26; margin: 0; }
+          .copy { height: 138mm; padding: 8mm 7mm; border: 1px solid #92ACA0; page-break-inside: avoid; }
+          .copy + .copy { margin-top: 5mm; }
+          header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #92ACA0; padding-bottom: 5mm; margin-bottom: 5mm; }
+          .brand { font-size: 24px; letter-spacing: 1px; color: #2f4d40; }
+          h1 { font-size: 15px; margin: 2mm 0 0; text-transform: uppercase; }
+          header span { font-size: 13px; font-weight: 700; background: #e8f0ec; border-radius: 999px; padding: 7px 12px; }
+          .meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 3mm; margin-bottom: 5mm; font-size: 11px; }
+          .meta span { border: 1px solid #d5e0db; border-radius: 6px; padding: 6px; min-height: 32px; }
+          .meta strong { display: block; font-size: 9px; color: #597066; text-transform: uppercase; margin-bottom: 2px; }
+          table { width: 100%; border-collapse: collapse; font-size: 10.5px; }
+          th, td { border-bottom: 1px solid #d5e0db; padding: 5px 6px; text-align: left; }
+          th { background: #edf3f0; font-size: 9px; text-transform: uppercase; }
+          th:last-child, td:last-child { text-align: right; width: 52px; }
+          .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 15mm; margin-top: 12mm; font-size: 11px; }
+          .line { border-top: 1px solid #1d2b26; padding-top: 5px; }
+        </style>
+      </head>
+      <body>
+        ${via("Almoxarifado")}
+        ${via("Galvanoplastia")}
+      </body>
+    </html>
+  `;
+  const printWindow = window.open("", "_blank");
+  if (!printWindow) {
+    alert("N\u00e3o foi poss\u00edvel abrir a impress\u00e3o. Verifique se o navegador bloqueou pop-ups.");
+    return;
+  }
+  printWindow.document.write(html);
+  printWindow.document.close();
+  printWindow.focus();
+  printWindow.print();
+}
+
+function compactGalvanoplastyItems(order) {
+  const grouped = new Map();
+  (order.items || []).forEach((item) => {
+    const key = [item.model, item.size, item.bath].join("||");
+    const current = grouped.get(key) || { model: item.model, size: item.size, bath: item.bath, quantity: 0 };
+    current.quantity += Number(item.quantity || 0);
+    grouped.set(key, current);
+  });
+  return [...grouped.values()].sort((a, b) => String(a.model).localeCompare(String(b.model)) || String(a.size).localeCompare(String(b.size)));
 }
 
 function printCollaboratorOrder(id) {
