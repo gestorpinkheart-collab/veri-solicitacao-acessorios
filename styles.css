@@ -714,6 +714,20 @@ label,
   padding: 18px;
 }
 
+.management-panel[aria-label="Gestão dos pedidos"] {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 330px);
+  min-height: 520px;
+}
+
+.management-panel[aria-label="Gestão dos pedidos"] > .orders-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 6px;
+}
+
 .panel-title-row,
 .items-heading,
 .report-header {
@@ -1065,7 +1079,105 @@ select:disabled {
 
 .compact-order-card {
   background: rgba(255, 255, 255, 0.86);
+}
+
+.order-line {
+  display: grid;
+  grid-template-columns: 34px minmax(190px, 1fr) minmax(360px, 1.7fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.expand-button {
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(146, 172, 160, 0.34);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--accent-dark);
   cursor: pointer;
+  font-weight: 900;
+  box-shadow: 0 8px 18px rgba(47, 71, 61, 0.08);
+}
+
+.expand-button:hover {
+  background: var(--accent-soft);
+  transform: translateY(-1px);
+}
+
+.order-main-info,
+.order-kpis,
+.order-compact-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.order-main-info {
+  flex-wrap: wrap;
+}
+
+.order-main-info strong {
+  color: var(--text);
+}
+
+.order-main-info span,
+.order-compact-meta span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.order-kpis {
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.order-kpis span {
+  display: inline-flex;
+  gap: 4px;
+  align-items: baseline;
+  min-height: 28px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: rgba(146, 172, 160, 0.11);
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.order-kpis strong {
+  color: var(--accent-dark);
+}
+
+.order-compact-meta {
+  flex-wrap: wrap;
+  margin: 8px 0 0 46px;
+}
+
+.order-expanded-body {
+  margin: 12px 0 0 46px;
+  padding: 12px;
+  border: 1px solid rgba(146, 172, 160, 0.28);
+  border-radius: 10px;
+  background: rgba(146, 172, 160, 0.08);
+}
+
+.expanded-order {
+  box-shadow: 0 18px 36px rgba(47, 71, 61, 0.12);
+}
+
+.compact-control {
+  display: grid;
+  gap: 5px;
+  min-width: 190px;
+}
+
+.compact-control input,
+.compact-control select {
+  min-height: 38px;
+  padding: 0 12px;
 }
 
 .collaborator-order-footer {
@@ -1084,7 +1196,7 @@ select:disabled {
 
 .detail-summary {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: 10px;
   margin: 12px 0;
 }
@@ -1153,6 +1265,17 @@ select:disabled {
   overflow: hidden;
 }
 
+.order-preview-items {
+  margin-top: 10px;
+  margin-left: 28px;
+}
+
+.expanded-items {
+  max-height: 260px;
+  overflow-y: auto;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
 .more-items {
   color: var(--accent-dark);
   font-weight: 900;
@@ -1218,6 +1341,8 @@ select:disabled {
   margin-top: 12px;
   padding-top: 12px;
   border-top: 1px solid var(--line);
+  flex-wrap: wrap;
+  justify-content: space-between;
 }
 
 .order-actions {
@@ -1408,6 +1533,15 @@ select:disabled {
   .field-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .order-line {
+    grid-template-columns: 34px minmax(180px, 1fr) auto;
+  }
+
+  .order-kpis {
+    grid-column: 2 / -1;
+    justify-content: flex-start;
+  }
 }
 
 @media (min-width: 760px) {
@@ -1497,6 +1631,31 @@ select:disabled {
   .item-cost-preview {
     justify-content: flex-start;
     width: max-content;
+  }
+
+  .management-panel[aria-label="Gestão dos pedidos"] {
+    height: auto;
+    min-height: 0;
+  }
+
+  .management-panel[aria-label="Gestão dos pedidos"] > .orders-list {
+    max-height: 70vh;
+  }
+
+  .order-line {
+    grid-template-columns: 34px 1fr;
+  }
+
+  .order-tags,
+  .order-kpis {
+    grid-column: 2;
+    justify-content: flex-start;
+  }
+
+  .order-compact-meta,
+  .order-preview-items,
+  .order-expanded-body {
+    margin-left: 0;
   }
 
 }

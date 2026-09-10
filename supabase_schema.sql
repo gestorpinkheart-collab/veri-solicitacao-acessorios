@@ -1,6 +1,7 @@
 create table if not exists public.accessory_orders (
   id text primary key,
   request_date date not null,
+  due_date date,
   requester text not null,
   phone text,
   origin text not null,
@@ -25,6 +26,9 @@ create table if not exists public.accessory_orders (
 alter table public.accessory_orders
 add column if not exists history jsonb not null default '[]'::jsonb;
 
+alter table public.accessory_orders
+add column if not exists due_date date;
+
 alter table public.accessory_orders drop constraint if exists accessory_orders_status_check;
 alter table public.accessory_orders add constraint accessory_orders_status_check check (
   status in (
@@ -40,6 +44,7 @@ alter table public.accessory_orders add constraint accessory_orders_status_check
 create index if not exists accessory_orders_phone_idx on public.accessory_orders (phone);
 create index if not exists accessory_orders_status_idx on public.accessory_orders (status);
 create index if not exists accessory_orders_request_date_idx on public.accessory_orders (request_date desc);
+create index if not exists accessory_orders_due_date_idx on public.accessory_orders (due_date);
 
 create or replace function public.set_accessory_orders_updated_at()
 returns trigger

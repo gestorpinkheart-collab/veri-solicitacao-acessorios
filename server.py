@@ -1114,6 +1114,7 @@ def normalize_order(order):
     return {
         "id": str(order.get("id", "")).strip(),
         "requestDate": str(order.get("requestDate", "")).strip() or datetime.now().date().isoformat(),
+        "dueDate": str(order.get("dueDate", "") or "").strip(),
         "requester": str(order.get("requester", "")).strip(),
         "phone": only_digits(order.get("phone", "")),
         "origin": str(order.get("origin", "")).strip(),
@@ -1230,6 +1231,8 @@ def append_history(order, action, actor="", actor_role="", details=None):
 def history_action(updates):
     if "status" in updates:
         return f"Status alterado para {updates.get('status')}"
+    if "dueDate" in updates:
+        return f"Previsao de entrega alterada para {updates.get('dueDate') or 'sem previsao'}"
     if "items" in updates:
         return "Itens do pedido atualizados"
     return "Pedido atualizado"
@@ -1239,7 +1242,7 @@ def allowed_order_updates(updates):
     if not isinstance(updates, dict):
         return {}
     allowed = {}
-    for key in ("requestDate", "requester", "phone", "origin", "priority", "status", "notes", "items", "history"):
+    for key in ("requestDate", "dueDate", "requester", "phone", "origin", "priority", "status", "notes", "items", "history"):
         if key in updates:
             allowed[key] = updates[key]
     if "phone" in allowed:
@@ -1252,6 +1255,7 @@ def updates_to_db(updates, include_history=True):
     allowed = allowed_order_updates(updates)
     field_map = {
         "requestDate": "request_date",
+        "dueDate": "due_date",
         "requester": "requester",
         "phone": "phone",
         "origin": "origin",
@@ -1264,7 +1268,7 @@ def updates_to_db(updates, include_history=True):
     for key, value in allowed.items():
         if key == "history" and not include_history:
             continue
-        db_updates[field_map[key]] = value
+        db_updates[field_map[key]] = None if key == "dueDate" and not value else value
     return db_updates
 
 
@@ -1272,6 +1276,7 @@ def order_to_db(order, include_history=True):
     data = {
         "id": order.get("id", ""),
         "request_date": order.get("requestDate", ""),
+        "due_date": order.get("dueDate") or None,
         "requester": order.get("requester", ""),
         "phone": only_digits(order.get("phone", "")),
         "origin": order.get("origin", ""),
@@ -1289,6 +1294,7 @@ def db_to_order(row):
     return {
         "id": row.get("id", ""),
         "requestDate": row.get("request_date", ""),
+        "dueDate": row.get("due_date", ""),
         "requester": row.get("requester", ""),
         "phone": row.get("phone", ""),
         "origin": row.get("origin", ""),
@@ -1449,6 +1455,7 @@ def filter_orders(orders, filters):
             [
                 str(order.get("id", "")),
                 str(order.get("requestDate", "")),
+                str(order.get("dueDate", "")),
                 str(order.get("requester", "")),
                 str(order.get("phone", "")),
                 str(order.get("origin", "")),
@@ -1468,13 +1475,14 @@ def filter_orders(orders, filters):
 
 
 def build_xlsx(orders):
-    rows = [["Pedido", "Data", "Solicitante", "Celular", "Origem", "Status", "Prioridade", "Modelo", "Tamanho", "Banho", "Quantidade", "Observações"]]
+    rows = [["Pedido", "Data", "Previsão", "Solicitante", "Celular", "Origem", "Status", "Prioridade", "Modelo", "Tamanho", "Banho", "Quantidade", "Observações"]]
     for order in orders:
         for item in order.get("items", []):
             rows.append(
                 [
                     order.get("id", ""),
                     order.get("requestDate", ""),
+                    order.get("dueDate", ""),
                     order.get("requester", ""),
                     order.get("phone", ""),
                     order.get("origin", ""),
