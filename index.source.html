@@ -1,0 +1,1359 @@
+﻿<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <meta name="theme-color" content="#2f5f4f" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="VERI" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>Controle Operacional PH</title>
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="assets/veri-app-icon.svg" />
+    <link rel="stylesheet" href="styles.css?v=20260704-trust-phase-1" />
+  </head>
+  <body>
+    <section class="boot-splash" id="bootSplash" aria-live="polite">
+      <img src="assets/veri-logo.png" alt="VERI" />
+      <span>Carregando ambiente...</span>
+    </section>
+    <section class="auth-gate" id="authGate" hidden>
+      <img class="auth-watermark" src="assets/veri-logo.png" alt="" aria-hidden="true" />
+      <div class="auth-orbit" aria-hidden="true"></div>
+
+      <aside class="auth-hero">
+        <div class="auth-hero-inner">
+          <img class="auth-hero-logo" src="assets/veri-logo.png" alt="VERI" />
+          <div>
+            <h1>Gestão da fábrica.</h1>
+            <p>Acompanhe lançamentos, saldos, produção e indicadores dos setores em uma única rotina operacional.</p>
+          </div>
+        </div>
+      </aside>
+
+      <div class="auth-form-side">
+        <form class="auth-card" id="authLoginForm">
+          <div class="auth-card-heading">
+            <h2>Entrar no sistema</h2>
+            <p>Use suas credenciais para acessar o ambiente operacional.</p>
+          </div>
+          <label>
+            E-mail ou login
+            <input id="authEmail" type="text" autocomplete="username" required />
+          </label>
+          <label>
+            Senha
+            <input id="authPassword" type="password" autocomplete="current-password" required />
+          </label>
+          <p class="auth-message" id="authMessage"></p>
+          <button class="primary-button" id="authSubmitButton" type="submit">Entrar</button>
+          <p class="auth-footnote">Acesso liberado pelo Gestor Master. Ambiente conectado às permissões e setores configurados.</p>
+        </form>
+      </div>
+    </section>
+
+    <main class="app-shell" hidden>
+      <aside class="sidebar">
+        <div class="sidebar-head">
+          <div class="brand">
+            <img class="brand-logo" src="assets/veri-menu-logo.png" alt="VERI" />
+          </div>
+          <button class="sidebar-alert-button" id="sidebarAlertButton" type="button" aria-label="Alertas" title="Alertas" hidden>
+            <svg viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg>
+            <span id="sidebarAlertBadge" hidden>0</span>
+          </button>
+        </div>
+        <div class="sidebar-role" id="sidebarRoleLabel">COLABORADOR</div>
+        <div class="sidebar-alert-panel" id="sidebarAlertPanel" hidden>
+          <div><strong>Alertas de gestão</strong><span><button id="markAllSidebarAlertsRead" type="button">Marcar lidas</button><button id="closeSidebarAlerts" type="button" aria-label="Fechar">&times;</button></span></div>
+          <div id="sidebarAlertList"></div>
+        </div>
+        <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Recolher menu" title="Recolher menu">☰</button>
+
+        <div class="sidebar-section">
+          <nav class="process-nav" id="processNav" aria-label="Processos"></nav>
+        </div>
+
+        <div class="access-panel">
+          <button class="account-profile-button" id="accountProfileButton" type="button" title="Minha conta">
+            <i id="accountInitials">C</i>
+            <span><strong id="globalAccessStatus">Colaborador</strong><small id="globalAccessUser">Acesso operacional</small></span>
+          </button>
+          <button class="master-button" id="globalMasterButton" type="button" aria-label="Sair" title="Sair">Sair</button>
+          <div class="profile-menu" id="profileMenu" hidden>
+            <button id="openProfileButton" type="button"><span>Meu Perfil</span></button>
+          </div>
+        </div>
+
+      </aside>
+
+      <section class="content">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow" id="sourceLabel">Controle diário</p>
+            <h2 id="processTitle">Cadastro</h2>
+          </div>
+          <div class="actions">
+            <button class="sync-status-button" id="syncStatusButton" type="button" title="Atualizar dados agora">
+              <span class="connection-status" id="connectionStatus"><i></i><b id="syncStatusText">Conectado</b></span>
+              <small id="syncStatusDetail">Aguardando sincronização</small>
+            </button>
+            <span class="app-version" id="appVersionLabel">v--</span>
+            <button class="ghost-button" id="processBackButton" type="button" hidden>Voltar</button>
+            <button class="ghost-button" id="seedButton" type="button" hidden>Restaurar dados reais</button>
+            <button class="ghost-button" id="templateButton" type="button" hidden>Baixar template</button>
+            <button class="ghost-button" id="importButton" type="button" hidden>Importar CSV</button>
+            <button class="primary-button" id="saveSectorCostsButton" type="button" hidden>Salvar tudo</button>
+            <button class="primary-button" id="exportButton" type="button" hidden>Exportar tabela</button>
+            <input id="importFileInput" type="file" accept=".csv,text/csv" hidden />
+          </div>
+        </header>
+
+        <section class="process-summary" id="processSummary">
+          <article>
+            <span id="kpiTotalLabel">Total</span>
+            <strong id="kpiTotal">0</strong>
+          </article>
+          <article>
+            <span id="kpiCollaboratorsLabel">Média colaboradores</span>
+            <strong id="kpiCollaborators">0</strong>
+          </article>
+          <article>
+            <span id="kpiPerPersonLabel">Média produção/colaborador</span>
+            <strong id="kpiPerPerson">0</strong>
+          </article>
+          <article>
+            <span id="kpiProductionHourLabel">Média produção/h</span>
+            <strong id="kpiProductionHour">0</strong>
+          </article>
+          <article>
+            <span id="kpiMdoDayLabel">Média custo MDO/dia</span>
+            <strong id="kpiMdoDay">R$ 0,00</strong>
+          </article>
+          <article>
+            <span id="kpiWorkedDayCostLabel">Média custo dia/trabalhado</span>
+            <strong id="kpiWorkedDayCost">R$ 0,00</strong>
+          </article>
+          <article>
+            <span id="kpiCostProductionLabel">Média custo/produção</span>
+            <strong id="kpiCostProduction">0</strong>
+          </article>
+        </section>
+
+        <section class="absenteeism-analytics" id="absenteeismAnalytics" hidden>
+          <article class="dashboard-panel full">
+            <div class="panel-heading">
+              <div>
+                <span class="panel-label">Absenteísmo</span>
+                <h3>Indicador mensal versus meta</h3>
+              </div>
+              <div class="absence-actions">
+                <button class="primary-button compact" id="absenceNewRecordButton" type="button">Registrar ausência</button>
+                <label class="compact-filter">
+                  Período
+                  <select id="absencePeriodFilter">
+                    <option value="all">Geral do ano</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+            <div class="absence-month-chart" id="absenceMonthChart"></div>
+          </article>
+
+          <div class="absence-grid">
+            <article class="dashboard-panel">
+              <div class="panel-heading">
+                <div>
+                  <span class="panel-label">Setores</span>
+                  <h3>Ausências por setor</h3>
+                </div>
+              </div>
+              <div class="absence-vertical-chart" id="absenceSectorBars"></div>
+            </article>
+
+            <article class="dashboard-panel">
+              <div class="panel-heading">
+                <div>
+                  <span class="panel-label">Motivos</span>
+                  <h3>Tipos de ausência</h3>
+                </div>
+              </div>
+              <div class="absence-vertical-chart" id="absenceTypeBars"></div>
+            </article>
+          </div>
+        </section>
+
+        <section class="providers-analytics" id="providersAnalytics" hidden>
+          <article class="dashboard-panel full">
+            <div class="panel-heading">
+              <div>
+                <span class="panel-label">Conta mensal</span>
+                <h3>Evolução dos prestadores</h3>
+                <small>Valor a depositar por competência e comparação com o mês anterior.</small>
+              </div>
+              <button class="primary-button compact" id="generateProviderClosingButton" type="button">Gerar fechamento</button>
+            </div>
+            <div class="providers-monthly-chart" id="providersMonthlyChart"></div>
+          </article>
+          <article class="dashboard-panel full">
+            <div class="panel-heading">
+              <div>
+                <span class="panel-label">Concentração</span>
+                <h3>Maiores valores no período</h3>
+              </div>
+            </div>
+            <div class="providers-ranking" id="providersRanking"></div>
+          </article>
+        </section>
+
+        <section class="people-analytics" id="peopleAnalytics" hidden>
+          <div class="absence-grid">
+            <article class="dashboard-panel">
+              <div class="panel-heading">
+                <div>
+                  <span class="panel-label">Pessoas</span>
+                  <h3>Colaboradores ativos por setor</h3>
+                </div>
+              </div>
+              <div class="absence-vertical-chart people-sector-chart" id="peopleSectorBars"></div>
+            </article>
+
+            <article class="dashboard-panel">
+              <div class="panel-heading">
+                <div>
+                  <span class="panel-label">Próximos marcos</span>
+                  <h3>Feedbacks de 30 e 60 dias</h3>
+                </div>
+              </div>
+              <div class="experience-list" id="peopleExperienceList"></div>
+            </article>
+          </div>
+          <article class="dashboard-panel full experience-board-panel">
+            <div class="panel-heading">
+              <div>
+                <span class="panel-label">Acompanhamento</span>
+                <h3>Experiência e Feedbacks</h3>
+                <small>Registre as conversas de 30 e 60 dias sem perder os prazos.</small>
+              </div>
+            </div>
+            <div class="experience-kanban" id="experienceKanban"></div>
+          </article>
+        </section>
+
+        <section class="production-snapshot" id="productionSnapshot" hidden>
+          <div class="production-snapshot-heading">
+            <div>
+              <span class="panel-label">Resumo de produção</span>
+              <h3 id="productionSnapshotTitle">Produção do setor</h3>
+            </div>
+            <label>
+              Mês
+              <select id="productionSnapshotPeriod"></select>
+            </label>
+          </div>
+          <div class="production-snapshot-grid" id="productionSnapshotCards"></div>
+          <div class="production-registered-cost" id="productionRegisteredCost"></div>
+        </section>
+
+        <section class="work-area" id="activeWorkArea">
+          <div class="inline-launch-mount" id="inlineLaunchMount" hidden></div>
+          <section class="external-services-alerts" id="externalServicesAlerts" hidden></section>
+
+          <div class="table-panel">
+            <div class="panel-heading">
+              <div>
+                <span class="panel-label">Tabela do processo</span>
+                <h3 id="tableTitle">Cadastro</h3>
+              </div>
+              <div class="table-actions">
+                <label class="table-period-filter">
+                  Mês
+                  <select id="tablePeriodFilter">
+                    <option value="all">Histórico geral</option>
+                  </select>
+                </label>
+                <input id="tableSearch" type="search" placeholder="Buscar na tabela Cadastro..." />
+                <button class="primary-button compact" id="newRecordButton" type="button" hidden>Incluir novo</button>
+              </div>
+            </div>
+
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr id="tableHead"></tr>
+                </thead>
+                <tbody id="tableBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section class="launch-monitor-area" id="launchMonitorArea" hidden>
+          <div class="dashboard-toolbar launch-monitor-toolbar">
+            <div>
+              <span class="panel-label">Acompanhamento diário</span>
+              <h3>Status dos lançamentos por setor</h3>
+              <small id="launchMonitorUpdatedAt"></small>
+            </div>
+            <button class="ghost-button compact" id="refreshLaunchMonitorButton" type="button">Atualizar status</button>
+          </div>
+          <div class="access-summary-strip launch-monitor-summary" id="launchMonitorSummary"></div>
+          <div class="launch-sector-picker launch-monitor-cards" id="launchMonitorCards"></div>
+        </section>
+
+        <section class="operational-flow-area" id="operationalFlowArea" hidden>
+          <div class="flow-toolbar">
+            <div>
+              <span class="panel-label">Gestão semanal</span>
+              <h3>Tags em movimento na fábrica</h3>
+              <small>Crie a semana de segunda a sexta e acompanhe saldos, entradas e saídas.</small>
+            </div>
+            <div class="flow-week-actions">
+              <label class="flow-week-field">
+                Semana
+                <select id="operationalFlowWeek"></select>
+              </label>
+              <button class="primary-button compact" id="openCreateOperationalWeekButton" type="button">Criar semana</button>
+            </div>
+          </div>
+
+          <div class="flow-week-creator" id="operationalWeekCreator" hidden>
+            <div>
+              <strong>Nova semana de controle</strong>
+              <small>Escolha o período de segunda a sexta. Depois informe os saldos iniciais e registre a produção manual por dia.</small>
+            </div>
+            <label>
+              Início
+              <input type="date" id="operationalWeekStart" />
+            </label>
+            <label>
+              Fim
+              <input type="date" id="operationalWeekEnd" />
+            </label>
+            <button class="primary-button compact" id="createOperationalWeekButton" type="button">Criar</button>
+            <button class="ghost-button compact" id="cancelOperationalWeekButton" type="button">Cancelar</button>
+          </div>
+
+          <div class="flow-summary" id="operationalFlowSummary"></div>
+
+          <section class="flow-panel flow-performance-panel">
+            <div class="panel-heading">
+              <div>
+                <span class="panel-label">Planejado versus realizado</span>
+                <h3>Leitura executiva da semana</h3>
+                <small>Compara a meta projetada com a saída final da Colagem/Campinas e destaca setores abaixo do esperado.</small>
+              </div>
+            </div>
+            <div class="flow-performance-layout" id="operationalFlowPerformance"></div>
+          </section>
+
+          <section class="flow-panel">
+            <div class="panel-heading">
+              <div>
+                <span class="panel-label">Fluxo da semana</span>
+                <h3>Mapa operacional por etapa</h3>
+                <small>Ordem do fluxo: Fundição, Separação, Tratamento, IQ, Pré-Elos, Galvano, E-coat, Pós-Banho, Etiquetagem e Colagem.</small>
+              </div>
+            </div>
+            <div class="operational-flow-board" id="operationalFlowBoard"></div>
+            <div class="flow-health-summary" id="operationalFlowHealth"></div>
+          </section>
+
+          <section class="flow-panel flow-forecast-panel">
+            <div class="panel-heading">
+              <div>
+                <span class="panel-label">Previsão</span>
+                <h3>Próxima semana e cobertura</h3>
+                <small>Use a semana realizada como base e ajuste a previsão conforme a decisão operacional.</small>
+              </div>
+              <button class="primary-button compact" id="saveOperationalFlowButton" type="button">Salvar semana</button>
+            </div>
+            <div class="flow-forecast-grid" id="operationalFlowForecast"></div>
+            <div class="flow-projection-grid" id="operationalFlowProjection"></div>
+            <p class="form-message" id="operationalFlowMessage" role="status"></p>
+          </section>
+
+          <section class="flow-panel flow-adjustment-panel">
+            <div class="panel-heading">
+              <div>
+                <span class="panel-label">Ajustes por etapa</span>
+                <h3>Entradas manuais e justificativas</h3>
+                <small>Use apenas quando o dado não vem automaticamente dos formulários ou da conta corrente.</small>
+              </div>
+            </div>
+            <div class="flow-source-strip" id="operationalFlowSources"></div>
+            <div class="flow-manual-grid" id="operationalFlowManual"></div>
+            <div class="flow-planning-table" id="operationalFlowPlanning" hidden></div>
+          </section>
+        </section>
+
+        <section class="weekly-closing-area" id="weeklyClosingArea" hidden>
+          <div class="weekly-closing-toolbar">
+            <div>
+              <span class="panel-label">Fechamento semanal</span>
+              <h3>Resumo dos setores</h3>
+            </div>
+            <div class="weekly-closing-filters">
+              <label>
+                Semana
+                <input id="weeklyClosingDate" type="date" />
+              </label>
+              <label>
+                Setor
+                <select id="weeklyClosingSector"></select>
+              </label>
+              <label id="weeklyClosingStatusFilterWrap" hidden>
+                Status
+                <select id="weeklyClosingStatusFilter">
+                  <option value="all">Todos</option>
+                  <option value="draft">Rascunho</option>
+                  <option value="sent">Enviado</option>
+                  <option value="reviewed">Revisado</option>
+                  <option value="revision_requested">Correção</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div class="weekly-closing-kpis" id="weeklyClosingKpis"></div>
+
+          <div class="weekly-closing-grid">
+            <article class="dashboard-panel weekly-closing-form-panel">
+              <div class="panel-heading">
+                <div>
+                  <span class="panel-label" id="weeklyClosingFormLabel">Colaborador</span>
+                  <h3 id="weeklyClosingFormTitle">Fechamento do setor</h3>
+                </div>
+                <span class="weekly-status-pill" id="weeklyClosingRecordStatus">--</span>
+              </div>
+              <form class="weekly-closing-form" id="weeklyClosingForm">
+                <label>
+                  Principais resultados
+                  <textarea id="weeklyClosingResults" rows="4"></textarea>
+                </label>
+                <label>
+                  Gargalos
+                  <textarea id="weeklyClosingBottlenecks" rows="4"></textarea>
+                </label>
+                <label>
+                  Ações tomadas
+                  <textarea id="weeklyClosingActionsTaken" rows="4"></textarea>
+                </label>
+                <label>
+                  Pendências / apoio necessário
+                  <textarea id="weeklyClosingSupportNeeded" rows="4"></textarea>
+                </label>
+                <div class="weekly-closing-actions">
+                  <button class="ghost-button compact" id="weeklyClosingClearButton" type="button">Limpar</button>
+                  <button class="secondary-button compact" id="weeklyClosingSaveDraftButton" type="button">Salvar rascunho</button>
+                  <button class="primary-button compact" id="weeklyClosingSubmitButton" type="submit">Enviar fechamento</button>
+                </div>
+                <p class="form-message" id="weeklyClosingMessage"></p>
+              </form>
+            </article>
+
+            <article class="dashboard-panel weekly-closing-master-panel" id="weeklyClosingMasterPanel" hidden>
+              <div class="panel-heading">
+                <div>
+                  <span class="panel-label">Master</span>
+                  <h3>Acompanhamento</h3>
+                </div>
+              </div>
+              <div class="weekly-closing-list" id="weeklyClosingList"></div>
+              <label class="weekly-summary-box">
+                Resumo executivo
+                <textarea id="weeklyClosingExecutiveSummary" rows="8"></textarea>
+              </label>
+              <div class="weekly-closing-actions">
+                <button class="secondary-button compact" id="weeklyClosingGenerateSummaryButton" type="button">Gerar resumo</button>
+                <button class="ghost-button compact" id="weeklyClosingRequestRevisionButton" type="button">Solicitar ajuste</button>
+                <button class="primary-button compact" id="weeklyClosingApproveButton" type="button">Aprovar</button>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="current-account-area" id="currentAccountArea" hidden>
+          <div class="flow-toolbar current-account-toolbar">
+            <div>
+              <span class="panel-label">Conta corrente operacional</span>
+              <h3>Saldo por setor</h3>
+              <small>Registre entradas e saídas de tags sem criar menus separados por setor.</small>
+            </div>
+          </div>
+
+          <div class="current-account-layout">
+            <aside class="current-account-sidebar">
+              <div class="current-account-sector-list" id="currentAccountSectorList"></div>
+            </aside>
+            <section class="current-account-content">
+              <div class="flow-summary current-account-summary" id="currentAccountSummary"></div>
+              <article class="current-account-closing-panel" id="currentAccountClosingPanel">
+                <div class="panel-heading">
+                  <div>
+                    <span class="panel-label">Fechamento semanal</span>
+                    <h3>Fechamento automático do saldo</h3>
+                    <small>Semana de segunda a sexta. Se a contagem não for informada, o saldo calculado da sexta vira base da próxima semana.</small>
+                  </div>
+                  <div class="panel-actions">
+                    <button class="secondary-button compact" id="applyImportedCurrentAccountBalanceButton" type="button">Usar saldo importado</button>
+                    <button class="secondary-button compact" id="saveCurrentAccountBaseButton" type="button">Salvar saldo base</button>
+                    <button class="primary-button compact" id="saveCurrentAccountClosingButton" type="button">Salvar fechamento</button>
+                  </div>
+                </div>
+                <div class="current-account-closing-grid">
+                  <label>
+                    Saldo inicial
+                    <input id="currentAccountInitialBalance" type="number" step="1" placeholder="0" />
+                  </label>
+                  <label>
+                    Sexta-feira
+                    <input id="currentAccountWeekEnd" type="date" />
+                  </label>
+                  <label>
+                    Contagem conferida na sexta (opcional)
+                    <input id="currentAccountPhysicalBalance" type="number" step="1" placeholder="Vazio = usar saldo calculado" />
+                  </label>
+                  <article><span>Entradas da semana</span><strong id="currentAccountWeekEntries">0</strong></article>
+                  <article><span>Saídas da semana</span><strong id="currentAccountWeekOutputs">0</strong></article>
+                  <article><span>Saldo calculado</span><strong id="currentAccountCalculatedBalance">0</strong></article>
+                  <article><span>Diferença</span><strong id="currentAccountBalanceDiff">--</strong></article>
+                  <article><span>Confiabilidade</span><strong id="currentAccountReliability">--</strong></article>
+                </div>
+                <p class="helper-text" id="currentAccountImportedBalanceHint"></p>
+                <p class="form-message" id="currentAccountClosingMessage"></p>
+              </article>
+              <div class="current-account-form-mount" id="currentAccountFormMount"></div>
+              <article class="launch-history-panel current-account-history">
+                <div class="panel-heading">
+                <div>
+                  <span class="panel-label">Histórico do saldo</span>
+                  <h3 id="currentAccountHistoryTitle">Movimentos realizados</h3>
+                  <small>Leitura em ordem de lançamento: saldo anterior + entrada - saída = saldo disponível.</small>
+                </div>
+                <div class="inline-actions">
+                  <button class="danger-button compact" id="clearCurrentAccountButton" type="button">Limpar tabela</button>
+                  <button class="ghost-button compact" id="importCurrentAccountButton" type="button">Importar CSV</button>
+                  <button class="ghost-button compact" id="exportCurrentAccountButton" type="button">Exportar Excel</button>
+                </div>
+              </div>
+                <div class="dashboard-table-wrap">
+                  <table>
+                    <thead>
+                      <tr id="currentAccountHistoryHead"></tr>
+                    </thead>
+                    <tbody id="currentAccountHistoryBody"></tbody>
+                  </table>
+                </div>
+              </article>
+            </section>
+          </div>
+        </section>
+
+        <section class="launch-area" id="launchArea" hidden>
+          <div class="launch-toolbar">
+            <div>
+              <h3>Registro diário dos setores</h3>
+            </div>
+          </div>
+
+          <div class="launch-sector-picker" id="launchSectorPicker"></div>
+
+          <div class="launch-form-shell" id="launchFormShell" hidden>
+            <div class="launch-form-top">
+              <div>
+                <span class="panel-label">Setor selecionado</span>
+                <h3 id="launchSelectedTitle">Cadastro</h3>
+              </div>
+              <div class="launch-form-actions">
+                <button class="primary-button compact" id="openLaunchFormButton" type="button">Novo lançamento</button>
+                <button class="ghost-button compact" id="changeLaunchSectorButton" type="button">Trocar setor</button>
+              </div>
+            </div>
+
+            <div class="launch-grid">
+              <div class="form-panel">
+                <div class="panel-heading">
+                  <div>
+                    <span class="panel-label">Novo lançamento</span>
+                    <h3 id="formTitle">Cadastro</h3>
+                  </div>
+                  <div class="form-heading-actions">
+                    <button class="ghost-button compact" id="clearFormButton" type="button">Limpar campos</button>
+                    <button class="ghost-button compact" id="cancelFormButton" type="button" hidden>Cancelar</button>
+                  </div>
+                </div>
+
+                <form class="entry-form" id="processForm" novalidate>
+                  <div class="dynamic-fields full" id="formFields"></div>
+                  <div class="form-preview full">
+                    <span>Total calculado: <strong id="previewTotal">0</strong></span>
+                    <span>Produção/colaborador: <strong id="previewPerPerson">0</strong></span>
+                  </div>
+                  <p class="form-error-message full" id="formErrorMessage"></p>
+                  <button class="primary-button full" id="submitButton" type="submit">Salvar</button>
+                </form>
+              </div>
+            </div>
+
+            <article class="launch-history-panel" id="launchHistoryPanel" hidden>
+              <div class="panel-heading">
+                <div>
+                  <span class="panel-label">Registros do setor</span>
+                  <h3 id="launchHistoryTitle">Lançamentos realizados</h3>
+                </div>
+                <button class="ghost-button compact" id="exportLaunchHistoryButton" type="button">Exportar Excel</button>
+              </div>
+              <div class="dashboard-table-wrap compact">
+                <table class="dashboard-table">
+                  <thead>
+                    <tr id="launchHistoryHead"></tr>
+                  </thead>
+                  <tbody id="launchHistoryBody"></tbody>
+                </table>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="placeholder-area" id="placeholderArea" hidden>
+          <div class="placeholder-box">
+            <span class="panel-label">Bloco ainda não implantado</span>
+            <h3 id="placeholderTitle"></h3>
+            <p>Envie o Excel deste setor para montar a tabela dele separadamente.</p>
+          </div>
+        </section>
+
+        <section class="logs-area" id="logsArea" hidden>
+          <div class="dashboard-toolbar">
+            <div>
+              <span class="panel-label">Auditoria</span>
+              <h3>Registro de inputs</h3>
+            </div>
+            <div class="dashboard-filters">
+              <span class="logs-retention" id="logsRetentionLabel">Carregando auditoria...</span>
+              <button class="ghost-button compact" id="refreshLogsButton" type="button">Atualizar logs</button>
+              <label>
+                Setor
+                <select id="logsSectorFilter">
+                  <option value="all">Todos os setores</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <div class="dashboard-panel full">
+            <div class="dashboard-table-wrap">
+              <table class="dashboard-table">
+                <thead>
+                  <tr>
+                    <th>Data/hora</th>
+                    <th>Usuário</th>
+                    <th>Setor</th>
+                    <th>Ação</th>
+                    <th>Registro</th>
+                  </tr>
+                </thead>
+                <tbody id="inputLogsTable"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section class="diagnostics-area" id="diagnosticsArea" hidden>
+          <div class="dashboard-toolbar">
+            <div>
+              <span class="panel-label">Confiabilidade</span>
+              <h3>Diagnóstico do Sistema</h3>
+              <p>Compare a base local com os registros visíveis no Supabase para identificar diferença entre perfis, cache ou permissões.</p>
+            </div>
+            <button class="ghost-button compact" id="refreshDiagnosticsButton" type="button">Atualizar diagnóstico</button>
+          </div>
+          <div class="diagnostics-grid" id="diagnosticsSummary"></div>
+          <div class="dashboard-panel full diagnostics-panel">
+            <div class="panel-heading">
+              <div>
+                <span class="panel-label">Bases operacionais</span>
+                <h3>Local x remoto por setor</h3>
+              </div>
+            </div>
+            <div class="dashboard-table-wrap">
+              <table class="dashboard-table diagnostics-table">
+                <thead>
+                  <tr>
+                    <th>Base / setor</th>
+                    <th>Local</th>
+                    <th>Oficial em cálculo</th>
+                    <th>Espelho operacional</th>
+                    <th>Base autenticada</th>
+                    <th>Local sem espelho</th>
+                    <th>Último registro</th>
+                  </tr>
+                </thead>
+                <tbody id="diagnosticsTableBody"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="dashboard-panel full diagnostics-issues-panel">
+            <div class="panel-heading">
+              <div>
+                <span class="panel-label">Leitura rápida</span>
+                <h3>Pontos de atenção</h3>
+              </div>
+            </div>
+            <ul class="diagnostics-issues" id="diagnosticsIssues"></ul>
+          </div>
+        </section>
+
+        <section class="access-management-area" id="accessManagementArea" hidden>
+          <div class="dashboard-toolbar">
+            <div>
+              <span class="panel-label">Master</span>
+              <h3>Gestão de Acessos</h3>
+            </div>
+            <div class="access-refresh-actions">
+              <span id="accessRefreshStatus" role="status"></span>
+              <button class="ghost-button compact" id="refreshAccessButton" type="button">Atualizar dados</button>
+            </div>
+          </div>
+          <div class="access-management-grid">
+            <article class="access-summary-strip" id="accessSummaryCards"></article>
+
+            <article class="dashboard-panel full">
+              <div class="panel-heading">
+                <div>
+                  <span class="panel-label">Usuários</span>
+                  <h3>Perfis cadastrados</h3>
+                </div>
+                <button class="primary-button compact" id="newAccessUserButton" type="button">Novo usuário</button>
+              </div>
+              <form class="access-user-form" id="accessUserForm" hidden>
+                <div class="access-user-form-toolbar">
+                  <div>
+                    <span class="panel-label">Gestão de usuário</span>
+                    <strong id="accessUserFormTitle">Novo acesso</strong>
+                  </div>
+                  <button class="ghost-button compact" id="backAccessUserButton" type="button">Voltar para a lista</button>
+                </div>
+                <div class="access-user-form-intro">
+                  <strong>Cadastro assistido</strong>
+                  <span>Informe login e senha provisória para criar o acesso. O UID será preenchido automaticamente pelo Supabase Auth.</span>
+                </div>
+                <label>
+                  Nome completo
+                  <input id="accessFullName" type="text" placeholder="Ex.: Maria Silva" />
+                </label>
+                <label>
+                  E-mail ou login operacional
+                  <input id="accessLogin" type="text" placeholder="Ex.: maria.silva ou email" />
+                </label>
+                <label>
+                  UID do Supabase Auth
+                  <input id="accessAuthUid" type="text" placeholder="Opcional: cole um UID já criado" />
+                </label>
+                <label>
+                  Senha provisória
+                  <input id="accessTempPassword" type="password" autocomplete="new-password" placeholder="Mínimo 6 caracteres" />
+                </label>
+                <label>
+                  Perfil
+                  <select id="accessRoleSelect"></select>
+                </label>
+                <label>
+                  Setor principal
+                  <select id="accessMainSectorSelect"></select>
+                </label>
+                <label>
+                  Status
+                  <select id="accessStatusSelect">
+                    <option value="active">Ativo</option>
+                    <option value="inactive">Inativo</option>
+                  </select>
+                </label>
+                <div class="access-user-form-preview">
+                  <span>E-mail técnico para Auth</span>
+                  <strong id="accessEmailPreview">--</strong>
+                </div>
+                <div class="access-user-form-actions">
+                  <button class="primary-button compact" type="submit">Salvar perfil</button>
+                  <button class="ghost-button compact" id="cancelAccessUserButton" type="button">Cancelar</button>
+                  <span id="accessUserFormStatus"></span>
+                </div>
+              </form>
+              <div class="dashboard-table-wrap">
+                <table class="dashboard-table">
+                  <thead>
+                    <tr>
+                      <th>Nome</th>
+                      <th>E-mail/Login</th>
+                      <th>Perfil</th>
+                      <th>Status</th>
+                      <th>Ação</th>
+                    </tr>
+                  </thead>
+                  <tbody id="accessUsersTable"></tbody>
+                </table>
+              </div>
+            </article>
+
+            <article class="dashboard-panel full access-permissions-panel">
+              <div class="panel-heading">
+                <div>
+                  <span class="panel-label">Permissões</span>
+                  <h3>Cards liberados por usuário</h3>
+                </div>
+                <div class="access-permission-filters">
+                  <label class="access-user-select">
+                    Usuário
+                    <select id="accessUserSelect"></select>
+                  </label>
+                  <label class="access-user-select compact">
+                    Grupo
+                    <select id="accessGroupFilter">
+                      <option value="all">Todos</option>
+                    </select>
+                  </label>
+                  <button class="primary-button compact" id="saveAccessPermissionsButton" type="button" disabled>Salvar alterações</button>
+                </div>
+              </div>
+              <div class="dashboard-table-wrap">
+                <table class="dashboard-table access-permissions-table">
+                  <thead>
+                    <tr>
+                      <th>Card/área</th>
+                      <th>Ver</th>
+                      <th>Lançar</th>
+                      <th>Editar</th>
+                      <th>Excluir</th>
+                      <th>Exportar</th>
+                      <th>Importar</th>
+                    </tr>
+                  </thead>
+                  <tbody id="accessPermissionsTable"></tbody>
+                </table>
+              </div>
+              <p class="access-save-status" id="accessSaveStatus"></p>
+            </article>
+          </div>
+        </section>
+
+        <section class="profile-area" id="profileArea" hidden>
+          <article class="profile-card">
+            <div class="profile-heading">
+              <div class="profile-avatar" id="profileAvatar">--</div>
+              <div>
+                <h3 id="profileDisplayName">Meu Perfil</h3>
+                <p id="profileDisplayEmail">--</p>
+                <small>O e-mail/login é a chave de acesso e não pode ser alterado aqui.</small>
+              </div>
+            </div>
+            <form class="profile-form" id="profileForm">
+              <label>
+                Email
+                <input id="profileEmail" type="email" disabled />
+              </label>
+              <label>
+                Nome completo
+                <input id="profileFullName" type="text" required />
+              </label>
+              <label>
+                Papel
+                <input id="profileRole" type="text" disabled />
+              </label>
+              <button class="primary-button compact" type="submit">Salvar alterações</button>
+              <span class="profile-status" id="profileSaveStatus"></span>
+            </form>
+          </article>
+
+          <article class="profile-card password-card">
+            <div class="panel-heading compact">
+              <div>
+                <span class="panel-label">Segurança</span>
+                <h3>Alterar senha</h3>
+              </div>
+            </div>
+            <form class="profile-form" id="passwordForm">
+              <label>
+                Nova senha
+                <input id="profileNewPassword" type="password" autocomplete="new-password" placeholder="Digite a nova senha" required />
+              </label>
+              <label>
+                Confirmar nova senha
+                <input id="profileConfirmPassword" type="password" autocomplete="new-password" placeholder="Confirme a nova senha" required />
+              </label>
+              <button class="primary-button compact" type="submit">Alterar senha</button>
+              <span class="profile-status" id="passwordSaveStatus"></span>
+            </form>
+          </article>
+        </section>
+
+        <section class="production-management-area" id="productionManagementArea" hidden>
+          <div class="production-management-toolbar">
+            <div>
+              <span class="panel-label">Gestão de produção</span>
+              <h3>Produção, absenteísmo e custo por tag</h3>
+              <small>Leitura gerencial por setor primário e subsetor, usando dados oficiais dos lançamentos.</small>
+            </div>
+            <div class="production-management-filters">
+              <label>
+                Período
+                <select id="productionManagementPeriod"></select>
+              </label>
+              <label>
+                Visão
+                <select id="productionManagementScope">
+                  <option value="all">Todos os setores</option>
+                  <option value="Produtos">Produtos</option>
+                  <option value="Galvanoplastia">Galvanoplastia</option>
+                  <option value="Etiquetagem">Etiquetagem</option>
+                  <option value="Serial/Colagem">Serial/Colagem</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div class="production-management-kpis" id="productionManagementKpis"></div>
+
+          <div class="production-management-insights" id="productionManagementInsights"></div>
+
+          <div class="production-management-layout">
+            <article class="dashboard-panel full">
+              <div class="panel-heading">
+                <div>
+                  <span class="panel-label">Setores primários</span>
+                  <h3>Consolidado gerencial</h3>
+                  <small>Custo do centro dividido pela produção em tags do próprio centro.</small>
+                </div>
+              </div>
+              <div class="production-management-sector-list" id="productionManagementSectors"></div>
+            </article>
+
+            <article class="dashboard-panel full">
+              <div class="panel-heading">
+                <div>
+                  <span class="panel-label">Absenteísmo</span>
+                  <h3>Impacto por setor</h3>
+                  <small>Indicador separado da produção para preservar leitura operacional.</small>
+                </div>
+              </div>
+              <div class="production-management-absence" id="productionManagementAbsence"></div>
+            </article>
+          </div>
+
+          <article class="dashboard-panel full">
+            <div class="panel-heading">
+              <div>
+                <span class="panel-label">Subsetores</span>
+                <h3>Custo e produtividade por operação</h3>
+                <small>Quando o cadastro possuir setor secundário, o cálculo usa os colaboradores ativos vinculados ao subsetor.</small>
+              </div>
+            </div>
+            <div class="production-management-subsectors" id="productionManagementSubsectors"></div>
+          </article>
+        </section>
+
+        <section class="dashboard-area" id="dashboardArea" hidden>
+          <div class="dashboard-toolbar">
+            <div>
+              <h3>Produção da fábrica por área</h3>
+            </div>
+            <div class="dashboard-filters">
+              <label>
+                Período
+                <select id="dashboardPeriod">
+                  <option value="all">Histórico geral</option>
+                </select>
+              </label>
+              <label>
+                Setor
+                <select id="dashboardSector">
+                  <option value="all">Todos os setores</option>
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div class="dashboard-mode-switch" id="dashboardModeSwitch">
+            <button class="active" data-dashboard-mode="summary" type="button">Resumo</button>
+            <button data-dashboard-mode="analytic" type="button">Analítico</button>
+          </div>
+
+          <section class="dashboard-panel full executive-summary factory-tv-dashboard" data-dashboard-view="summary">
+            <header class="topbar">
+              <div>
+                <h1 id="executiveSummaryTitle">Dashboard de Produção</h1>
+                <small id="executiveSummaryHint">Gestão à vista da fábrica - modelo executivo</small>
+              </div>
+              <div class="period"><span></span><span id="factoryTvUpdatedAt">Atualizado agora</span></div>
+            </header>
+
+            <section class="kpi-grid" aria-label="Indicadores principais">
+              <article class="kpi dark" title="Total de tags liberadas/produzidas no período selecionado">
+                <div class="label">Produção em tags</div>
+                <div class="value" id="executiveTotalTags">0</div>
+                <div class="delta"><span id="factoryTvTagsDelta" class="up">--</span> vs. mês anterior</div>
+              </article>
+              <article class="kpi" title="Quantidade final de peças registradas na Colagem">
+                <div class="label">Produção em peças</div>
+                <div class="value" id="executiveTotalPieces">0</div>
+                <div class="delta"><span id="factoryTvPiecesDelta" class="up">--</span> vs. mês anterior</div>
+              </article>
+              <article class="kpi" title="Peso total banhado nos setores que trabalham em gramas">
+                <div class="label">Total banhado/peso</div>
+                <div class="value" id="factoryTvBathWeight">0 g</div>
+                <div class="delta"><span id="factoryTvBathDelta" class="down">--</span> vs. mês anterior</div>
+              </article>
+              <article class="kpi" title="Volume reprocessado ou retornado para ajuste no período">
+                <div class="label">Retrabalho</div>
+                <div class="value" id="factoryTvRework">0</div>
+                <div class="delta"><span id="factoryTvReworkShare" class="down">0%</span> do volume final</div>
+              </article>
+              <article class="kpi" title="Horas perdidas por ausência sobre horas planejadas">
+                <div class="label">Absenteísmo</div>
+                <div class="value" id="factoryTvAbsence">0%</div>
+                <div class="delta"><span id="factoryTvAbsenceStatus" class="up">--</span> da meta 3,0%</div>
+              </article>
+            </section>
+
+            <section class="dashboard">
+              <article class="panel span-3 tag-data-message" id="factoryTvDataMessage" hidden></article>
+
+              <article class="panel span-2">
+                <h2>KPI operacional</h2>
+                <div class="gauge-grid">
+                  <div class="gauge" id="factoryTvGaugeHit" title="Tags entregues contra meta mensal">
+                    <span>Atingimento</span>
+                    <div class="dial"></div>
+                    <strong>0%</strong>
+                  </div>
+                  <div class="gauge" id="factoryTvGaugeFlow" title="Setores com fluxo dentro do esperado">
+                    <span>Fluxo em dia</span>
+                    <div class="dial"></div>
+                    <strong>0%</strong>
+                  </div>
+                  <div class="gauge" id="factoryTvGaugeQuality" title="Registros completos e sem alerta de validação">
+                    <span>Qualidade dados</span>
+                    <div class="dial"></div>
+                    <strong>0%</strong>
+                  </div>
+                  <div class="gauge" id="factoryTvGaugeRisk" title="Peso dos gargalos no volume semanal">
+                    <span>Risco gargalo</span>
+                    <div class="dial danger"></div>
+                    <strong>0%</strong>
+                  </div>
+                </div>
+              </article>
+
+              <article class="panel goal-card">
+                <h2>Produção real</h2>
+                <div class="goal-icon" aria-hidden="true">
+                  <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="4">
+                    <path d="M16 48V24h10v24M30 48V14h10v34M44 48V30h10v18" />
+                    <path d="M10 50h48M14 18l12-8 12 8 12-8" />
+                  </svg>
+                </div>
+                <div class="goal-big" id="factoryTvProductionReal">0</div>
+                <div class="goal-sub">Tags entregues para Campinas</div>
+              </article>
+
+              <article class="panel span-2">
+                <h2 id="executiveMetricsTitle">Volume mensal por setor - tags</h2>
+                <div class="bar-chart" id="executiveMetricsBars"></div>
+              </article>
+
+              <article class="panel">
+                <h2>Volume por tipo de banho</h2>
+                <p class="panel-note">Base: registros do menu Processo no mês vigente.</p>
+                <div class="bath-list" id="factoryTvBathRows" aria-label="Volume mensal por tipo de banho"></div>
+              </article>
+
+              <article class="panel span-2">
+                <h2 id="executiveComparisonTitle">Análise de produção - comparativo mensal</h2>
+                <p class="panel-note" id="executiveComparisonDescription">Saída final em tags, comparando o mês com o período anterior.</p>
+                <div class="month-analysis" id="executivePeriodComparison" aria-label="Comparativo mensal de produção"></div>
+              </article>
+
+              <article class="panel">
+                <h2>Ranking mensal por setor</h2>
+                <div class="rank" id="factoryTvRankRows"></div>
+              </article>
+
+              <article class="panel">
+                <h2>Capacidade de horas</h2>
+                <div class="workload" id="factoryTvWorkloadRows">
+                  <div class="workload-card" title="Segunda a quinta: 07:30 às 17:30. Sexta: 07:30 às 16:30.">
+                    <span>Dias trabalhados</span>
+                    <strong id="factoryTvWorkdays">0</strong>
+                    <small>Base do período.</small>
+                  </div>
+                  <div class="workload-card" title="Horas planejadas considerando os dias úteis do período.">
+                    <span>Horas planejadas</span>
+                    <strong id="factoryTvPlannedHours">0h</strong>
+                    <small>Seg-qui 10h, sex 9h.</small>
+                  </div>
+                  <div class="workload-card" title="Hora extra de sábado deve ser opcional e separada da jornada normal.">
+                    <span>H.E sábado</span>
+                    <strong id="factoryTvExtraHours">0h</strong>
+                    <small>Opcional e separada.</small>
+                  </div>
+                  <div class="workload-card" title="Horas realizadas = planejadas - ausências + horas extras aprovadas.">
+                    <span>Realizado</span>
+                    <strong id="factoryTvWorkedHours">0h</strong>
+                    <small>Planejado - ausências.</small>
+                  </div>
+                </div>
+              </article>
+
+              <article class="panel">
+                <h2>Saldo por etapa - tags</h2>
+                <div class="horizontal-bars" id="factoryTvStockRows"></div>
+              </article>
+
+              <article class="panel">
+                <h2>Retrabalho por origem</h2>
+                <div class="rework-grid" id="factoryTvReworkRows"></div>
+              </article>
+
+              <article class="panel">
+                <h2>Alertas operacionais</h2>
+                <div class="alert-list" id="factoryTvAlertRows"></div>
+              </article>
+
+              <article class="panel span-2">
+                <h2>Absenteísmo mensal</h2>
+                <div class="absence-chart">
+                  <small>Percentual sobre base planejada. Linha pontilhada: meta 3,0%.</small>
+                  <div class="absence-bars" id="factoryTvAbsenceBars"></div>
+                </div>
+              </article>
+
+              <article class="panel span-3">
+                <h2>Produção mensal por setor - tags</h2>
+                <div class="production-month" id="factoryTvProductionMonthCards"></div>
+                <div class="production-note">
+                  Este bloco usa somente os registros do menu Processo no mês vigente. A conta corrente continua servindo para saldo e confiabilidade, mas não alimenta esta visão de produção.
+                </div>
+              </article>
+            </section>
+            <span id="executiveTagGoalHit" hidden>0%</span>
+            <span id="executiveTagGoalMissingPercent" hidden>0%</span>
+            <span id="executiveTagGoalRemaining" hidden>0</span>
+            <div class="executive-annual-summary factory-tv-hidden-support" aria-hidden="true">
+              <div id="executiveAnnualProduction"></div>
+              <h3 id="executiveAnnualTitle">Consolidado do ano</h3>
+            </div>
+          </section>
+
+          <div class="dashboard-grid">
+            <section class="dashboard-panel wide full dashboard-parameters-panel" data-dashboard-view="analytic">
+              <div class="panel-heading">
+                <div>
+                  <span class="panel-label">Parâmetros de gestão</span>
+                  <h3>Meta de produção e H.E</h3>
+                </div>
+              </div>
+              <div class="dashboard-parameters-grid">
+                <article class="dashboard-parameter-card">
+                  <span class="panel-label">Meta mensal</span>
+                  <label>
+                    <span>Meta mensal de tags</span>
+                    <input id="executiveTagGoalInput" type="number" min="1" step="1" inputmode="numeric" value="85000" />
+                  </label>
+                </article>
+                <article class="dashboard-parameter-card">
+                  <span class="panel-label">Hora extra</span>
+                  <label>
+                    <span>H.E sábado (horas)</span>
+                    <input id="factoryTvExtraHoursInput" type="number" min="0" step="0.5" inputmode="decimal" placeholder="0" />
+                  </label>
+                </article>
+                <article class="dashboard-parameter-card parameter-card-wide">
+                  <span class="panel-label">Equipe H.E</span>
+                  <div class="collaborator-picker">
+                    <label>
+                      <span>Buscar colaborador</span>
+                      <input id="factoryTvCollaboratorSearch" list="factoryTvCollaboratorOptions" autocomplete="off" placeholder="Digite para buscar na base de colaboradores" />
+                      <datalist id="factoryTvCollaboratorOptions"></datalist>
+                    </label>
+                    <button class="secondary-button compact" id="factoryTvAddCollaborator" type="button">Adicionar</button>
+                  </div>
+                  <div class="selected-collaborators" id="factoryTvSelectedCollaborators" aria-label="Colaboradores selecionados"></div>
+                  <input id="factoryTvExtraPeopleInput" type="hidden" />
+                </article>
+                <div class="dashboard-parameters-actions">
+                  <button class="primary-button compact" id="factoryTvSaveHours" type="button">Salvar parâmetros</button>
+                  <span class="inline-save-status" id="factoryTvSaveStatus" role="status" aria-live="polite"></span>
+                </div>
+              </div>
+            </section>
+
+            <section class="dashboard-panel wide full" data-dashboard-view="analytic">
+              <div class="panel-heading">
+                <div>
+                  <span class="panel-label">Comportamento</span>
+                  <h3 id="dashboardEvolutionTitle">Evolução mensal - Colagem</h3>
+                  <small id="dashboardEvolutionDescription">Tags produzidas pela Colagem</small>
+                </div>
+              </div>
+              <div class="month-chart" id="dashboardMonthChart"></div>
+            </section>
+
+            <section class="dashboard-panel wide full" data-dashboard-view="analytic">
+              <div class="panel-heading">
+                <div>
+                  <span class="panel-label">Detalhe</span>
+                  <h3>Resumo por setor</h3>
+                </div>
+              </div>
+              <div class="dashboard-table-wrap">
+                <table class="dashboard-table">
+                  <thead>
+                    <tr>
+                      <th>Setor</th>
+                      <th>Registros</th>
+                      <th>Produção</th>
+                      <th>Unidade</th>
+                    </tr>
+                  </thead>
+                  <tbody id="dashboardSummaryTable"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script>
+      window.PH_BOOT_ERRORS = [];
+      window.addEventListener("error", (event) => {
+        const file = event.target?.tagName === "SCRIPT" ? event.target.getAttribute("src") : "";
+        if (file) window.PH_BOOT_ERRORS.push(`Falha ao carregar: ${file}`);
+      }, true);
+      window.addEventListener("error", (event) => {
+        if (event.message) window.PH_BOOT_ERRORS.push(`${event.message} ${event.filename || ""}:${event.lineno || ""}`);
+      });
+      window.addEventListener("unhandledrejection", (event) => {
+        window.PH_BOOT_ERRORS.push(`Erro assíncrono: ${event.reason?.message || event.reason || "sem detalhe"}`);
+      });
+    </script>
+    <script src="cadastro-data.js?v=20260603"></script>
+    <script src="separacao-produtos-data.js?v=20260731-1"></script>
+    <script src="iq-semiacabado-data.js?v=20260603"></script>
+    <script src="tratamento-superficie-data.js?v=20260603"></script>
+    <script src="galvanoplastia-data.js?v=20260622-1"></script>
+    <script src="pos-banho-data.js?v=20260604"></script>
+    <script src="ecoat-producao-data.js?v=20260728-1"></script>
+    <script src="etiquetagem-data.js?v=20260604"></script>
+    <script src="colagem-data.js?v=20260604"></script>
+    <script src="colagem-conta-data.js?v=20260724-1"></script>
+    <script src="absenteismo-data.js?v=20260617-1"></script>
+    <script src="colaboradores-data.js?v=20260618-1"></script>
+    <script src="custos-setores-data.js?v=20260626-2"></script>
+    <script src="prestadores-servicos-data.js?v=20260701-1"></script>
+    <script src="terceiros-galvano-data.js?v=20260902-1"></script>
+    <script src="services/storage-service.js?v=20260902-2"></script>
+    <script src="services/supabase-service.js?v=20260704-trust-phase-1"></script>
+    <script src="services/audit-service.js?v=20260704-trust-phase-1"></script>
+    <div class="master-modal" id="masterModal" hidden>
+      <form class="master-card" id="masterLoginForm">
+        <div>
+          <span class="panel-label">Gestor Master</span>
+          <h3 id="masterModalTitle">Acesso restrito</h3>
+        </div>
+        <div id="masterLoginFields">
+          <label>Login<input id="masterUser" type="text" autocomplete="username" /></label>
+          <label>Senha<input id="masterPassword" type="password" autocomplete="current-password" /></label>
+        </div>
+        <div id="masterPasswordChangeFields" hidden>
+          <label>Nova senha<input id="masterNewPassword" type="password" autocomplete="new-password" /></label>
+          <label>Confirmar nova senha<input id="masterConfirmPassword" type="password" autocomplete="new-password" /></label>
+        </div>
+        <p id="masterLoginMessage"></p>
+        <div class="master-actions">
+          <button class="ghost-button compact" id="masterCancelButton" type="button">Cancelar</button>
+          <button class="primary-button compact" id="masterSubmitButton" type="submit">Liberar</button>
+        </div>
+      </form>
+    </div>
+    <dialog class="record-view-dialog" id="recordViewDialog">
+      <div class="record-view-heading">
+        <div>
+          <span class="panel-label">Visualização</span>
+          <h3 id="recordViewTitle">Detalhes do colaborador</h3>
+        </div>
+        <button class="icon-action" id="closeRecordViewButton" type="button" aria-label="Fechar" title="Fechar">&times;</button>
+      </div>
+      <div class="record-view-grid" id="recordViewContent"></div>
+    </dialog>
+    <dialog class="feedback-dialog" id="experienceFeedbackDialog">
+      <form id="experienceFeedbackForm">
+        <div class="record-view-heading">
+          <div>
+            <span class="panel-label">Período de experiência</span>
+            <h3 id="experienceFeedbackTitle">Registrar feedback</h3>
+          </div>
+          <button class="icon-action" id="closeExperienceFeedbackButton" type="button" aria-label="Fechar" title="Fechar">&times;</button>
+        </div>
+        <div class="feedback-form-grid">
+          <input id="experienceFeedbackCollaboratorId" type="hidden" />
+          <input id="experienceFeedbackMilestone" type="hidden" />
+          <label>Colaborador<input id="experienceFeedbackCollaborator" type="text" disabled /></label>
+          <label>Marco<input id="experienceFeedbackMilestoneLabel" type="text" disabled /></label>
+          <label>Feedback realizado?
+            <select id="experienceFeedbackStatus" required><option value="">Selecione</option><option value="Sim">Sim</option><option value="Não">Não</option></select>
+          </label>
+          <label>Data da conversa<input id="experienceFeedbackDate" type="date" /></label>
+          <label class="full">Responsável<input id="experienceFeedbackResponsible" type="text" /></label>
+          <label class="full">Registro da conversa<textarea id="experienceFeedbackNotes" rows="4"></textarea></label>
+          <p class="form-error-message full" id="experienceFeedbackMessage"></p>
+        </div>
+        <div class="feedback-form-actions">
+          <button class="ghost-button compact" id="cancelExperienceFeedbackButton" type="button">Cancelar</button>
+          <button class="primary-button compact" id="saveExperienceFeedbackButton" type="submit">Salvar feedback</button>
+        </div>
+      </form>
+    </dialog>
+    <dialog class="feedback-dialog" id="zeroValidationDialog">
+      <div class="record-view-heading">
+        <div>
+          <span class="panel-label">Validação gerencial</span>
+          <h3 id="zeroValidationTitle">Validar lançamento</h3>
+          <small id="zeroValidationMeta"></small>
+        </div>
+        <button class="icon-action" id="closeZeroValidationButton" type="button" aria-label="Fechar" title="Fechar">&times;</button>
+      </div>
+      <input id="zeroValidationKey" type="hidden" />
+      <div class="feedback-form-grid">
+        <div class="validation-readonly full"><span>Campos com valor zero</span><strong id="zeroValidationFields"></strong></div>
+        <div class="validation-readonly full"><span>Justificativa do lançamento</span><p id="zeroValidationReason"></p></div>
+        <label class="full">Parecer do gestor<textarea id="zeroValidationNote" rows="3" placeholder="Opcional para aprovação; obrigatório ao solicitar correção"></textarea></label>
+        <p class="form-error-message full" id="zeroValidationMessage"></p>
+      </div>
+      <div class="feedback-form-actions">
+        <button class="ghost-button compact" id="requestZeroCorrectionButton" type="button">Solicitar correção</button>
+        <button class="primary-button compact" id="approveZeroValidationButton" type="button">Aprovar lançamento</button>
+      </div>
+    </dialog>
+    <script src="app.js?v=20260904-sync-preserve-indicators-1"></script>
+    <script>
+      setTimeout(() => {
+        const loginVisible = !document.querySelector("#authGate")?.hidden;
+        const menuEmpty = !document.querySelector("#processNav")?.children.length;
+        if (!loginVisible && (!window.PH_APP_READY || menuEmpty || window.PH_BOOT_ERRORS.length)) {
+          const splash = document.querySelector("#bootSplash");
+          if (splash) splash.hidden = true;
+          const box = document.createElement("div");
+          box.style.cssText = "position:fixed;left:24px;right:24px;bottom:24px;z-index:9999;padding:16px;border:1px solid #a13737;border-radius:8px;color:#7f1d1d;background:#fff1f1;font:14px Arial,Helvetica,sans-serif;box-shadow:0 16px 40px rgba(31,45,61,.18)";
+          box.innerHTML = `<strong>Falha ao iniciar o app.</strong><br>${(window.PH_BOOT_ERRORS.length ? window.PH_BOOT_ERRORS : ["app.js não finalizou a inicialização. Verifique se todos os arquivos .js foram publicados na raiz do Render."]).join("<br>")}`;
+          document.body.appendChild(box);
+        }
+      }, 12000);
+    </script>
+  </body>
+</html>
+
+
+
