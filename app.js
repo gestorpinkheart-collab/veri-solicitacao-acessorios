@@ -175,6 +175,7 @@ const elements = {
   searchInput: document.querySelector("#searchInput"),
   filterStatus: document.querySelector("#filterStatus"),
   filterPriority: document.querySelector("#filterPriority"),
+  statusWidgets: document.querySelectorAll("[data-status-filter]"),
   widgetReceived: document.querySelector("#widgetReceived"),
   widgetProgress: document.querySelector("#widgetProgress"),
   widgetBathPrep: document.querySelector("#widgetBathPrep"),
@@ -301,6 +302,9 @@ async function init() {
   elements.searchInput.addEventListener("input", render);
   elements.filterStatus.addEventListener("change", render);
   elements.filterPriority.addEventListener("change", render);
+  elements.statusWidgets.forEach((button) => {
+    button.addEventListener("click", () => applyStatusWidgetFilter(button.dataset.statusFilter));
+  });
   elements.dashboardDateFrom.addEventListener("change", render);
   elements.dashboardDateTo.addEventListener("change", render);
   elements.dashboardFilterStatus.addEventListener("change", render);
@@ -2336,6 +2340,16 @@ function renderStatusWidgets() {
   if (elements.widgetPostBath) elements.widgetPostBath.textContent = countStatus("P\u00f3s banho");
   if (elements.widgetFinalPrep) elements.widgetFinalPrep.textContent = countStatus("Prepara\u00e7\u00e3o final");
   elements.widgetDelivered.textContent = countStatus("Entregue");
+  elements.statusWidgets.forEach((button) => {
+    button.classList.toggle("active", elements.filterStatus.value === button.dataset.statusFilter);
+  });
+}
+
+function applyStatusWidgetFilter(status) {
+  if (!elements.filterStatus || !status) return;
+  elements.filterStatus.value = elements.filterStatus.value === status ? "" : status;
+  render();
+  elements.ordersList?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function renderCharts() {
@@ -2478,7 +2492,11 @@ function buildOrderCard(order, { mode }) {
       <span>${order.origin}</span>
       <span>${formatPhone(order.phone) || "Sem celular"}</span>
       <span>${items.length} item(ns)</span>
-      ${galvanoplastySent ? `<span class="galvanoplasty-badge">Galvanoplastia: ${formatShortDate(galvanoplasty.sentAt)} · ${galvanoplasty.receivedBy || "recebimento registrado"}</span>` : ""}
+      ${isManagement ? `
+        <button class="galvanoplasty-indicator ${galvanoplastySent ? "done" : "pending"}" type="button" data-galvanoplasty-detail="${order.id}" title="${galvanoplastySent ? "Ver registro de Galvanoplastia" : "Sem registro de Galvanoplastia"}" aria-label="${galvanoplastySent ? "Ver registro de Galvanoplastia" : "Sem registro de Galvanoplastia"}">
+          ${galvanoplastySent ? "\u2713" : "!"}
+        </button>
+      ` : ""}
     </div>
     ${isExpanded ? `
       <div class="order-expanded-body">
@@ -2551,6 +2569,7 @@ function buildOrderCard(order, { mode }) {
   card.querySelector("[data-order-due-date]")?.addEventListener("change", (event) => updateDueDate(order.id, event.target.value));
   card.querySelector("[data-edit]")?.addEventListener("click", () => editOrder(order.id));
   card.querySelector("[data-clone]")?.addEventListener("click", () => cloneOrder(order.id));
+  card.querySelector("[data-galvanoplasty-detail]")?.addEventListener("click", () => showGalvanoplastyDetail(order.id));
   card.querySelector("[data-galvanoplasty-send]")?.addEventListener("click", () => registerGalvanoplastyShipment(order.id));
   card.querySelector("[data-galvanoplasty-print]")?.addEventListener("click", () => printGalvanoplastyProtocol(order.id));
   card.querySelector("[data-print-order]")?.addEventListener("click", () => printCollaboratorOrder(order.id));
@@ -2562,6 +2581,28 @@ function toggleOrderExpansion(id) {
   if (expandedOrderIds.has(id)) expandedOrderIds.delete(id);
   else expandedOrderIds.add(id);
   render();
+}
+
+function showGalvanoplastyDetail(id) {
+  const order = orders.find((item) => item.id === id);
+  if (!order) return;
+  const galvanoplasty = order.galvanoplasty || {};
+  if (!galvanoplasty.sentAt) {
+    alert("Este pedido ainda n\u00e3o possui registro de envio para Galvanoplastia.");
+    return;
+  }
+  const sentAt = new Date(galvanoplasty.sentAt);
+  const sentDate = formatShortDate(sentAt);
+  const sentTime = Number.isNaN(sentAt.getTime()) ? "-" : sentAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
+  alert(
+    `Registro de Galvanoplastia\n\n` +
+      `Pedido: ${order.id}\n` +
+      `Data: ${sentDate || "-"}\n` +
+      `Hora: ${sentTime}\n` +
+      `Enviado por: ${galvanoplasty.sentBy || "-"}\n` +
+      `Recebido por: ${galvanoplasty.receivedBy || "-"}\n` +
+      `Retorno: ${formatShortDate(galvanoplasty.returnDate || galvanoplasty.deliveryDate) || "-"}`
+  );
 }
 
 function showManagementOrderDetail(id) {
