@@ -2478,7 +2478,7 @@ function buildOrderCard(order, { mode }) {
       <span>${order.origin}</span>
       <span>${formatPhone(order.phone) || "Sem celular"}</span>
       <span>${items.length} item(ns)</span>
-      ${galvanoplastySent ? `<span class="galvanoplasty-badge">Galvanoplastia enviada: ${formatDateTime(galvanoplasty.sentAt)}</span>` : ""}
+      ${galvanoplastySent ? `<span class="galvanoplasty-badge">Galvanoplastia: ${formatShortDate(galvanoplasty.sentAt)} · ${galvanoplasty.receivedBy || "recebimento registrado"}</span>` : ""}
     </div>
     ${isExpanded ? `
       <div class="order-expanded-body">
@@ -2684,10 +2684,18 @@ async function registerGalvanoplastyShipment(id) {
   const order = orders.find((item) => item.id === id);
   if (!order) return;
 
-  const deliveryDate = prompt("Data de entrega prevista/real para retorno da Galvanoplastia (AAAA-MM-DD):", order.galvanoplasty?.deliveryDate || order.dueDate || "");
-  if (deliveryDate === null) return;
-  const trimmedDeliveryDate = deliveryDate.trim();
-  if (trimmedDeliveryDate && !/^\d{4}-\d{2}-\d{2}$/.test(trimmedDeliveryDate)) {
+  const receivedBy = prompt("Nome de quem recebeu as pe\u00e7as na Galvanoplastia:", order.galvanoplasty?.receivedBy || "");
+  if (receivedBy === null) return;
+  const trimmedReceivedBy = receivedBy.trim();
+  if (!trimmedReceivedBy) {
+    alert("Informe o nome de quem recebeu as pe\u00e7as.");
+    return;
+  }
+
+  const returnDate = prompt("Data de retorno prevista/real da Galvanoplastia (AAAA-MM-DD):", order.galvanoplasty?.returnDate || order.dueDate || "");
+  if (returnDate === null) return;
+  const trimmedReturnDate = returnDate.trim();
+  if (trimmedReturnDate && !/^\d{4}-\d{2}-\d{2}$/.test(trimmedReturnDate)) {
     alert("Informe a data no formato AAAA-MM-DD ou deixe em branco.");
     return;
   }
@@ -2699,7 +2707,8 @@ async function registerGalvanoplastyShipment(id) {
     sentAt: now.toISOString(),
     sentBy: currentSession?.name || "Sistema",
     sentByLogin: currentSession?.login || "",
-    deliveryDate: trimmedDeliveryDate,
+    receivedBy: trimmedReceivedBy,
+    returnDate: trimmedReturnDate,
   };
 
   try {
@@ -2725,7 +2734,8 @@ function printGalvanoplastyProtocol(id) {
   const galvanoplasty = order.galvanoplasty || {};
   const sentAt = galvanoplasty.sentAt ? new Date(galvanoplasty.sentAt) : new Date();
   const sentBy = galvanoplasty.sentBy || currentSession?.name || "";
-  const deliveryDate = galvanoplasty.deliveryDate || "";
+  const receivedBy = galvanoplasty.receivedBy || "";
+  const returnDate = galvanoplasty.returnDate || galvanoplasty.deliveryDate || "";
   const bathTotals = galvanoplastyBathTotals(order);
   const summaryGroups = compactGalvanoplastySummary(order);
   const summaryRows = summaryGroups.slice(0, 8);
@@ -2742,11 +2752,11 @@ function printGalvanoplastyProtocol(id) {
       </header>
       <div class="meta">
         <span><strong>Pedido</strong>${order.id}</span>
-        <span><strong>Data de envio</strong>${formatDate(sentAt.toISOString().slice(0, 10))}</span>
+        <span><strong>${label === "Galvanoplastia" ? "Data recebimento" : "Data de envio"}</strong>${formatShortDate(sentAt)}</span>
         <span><strong>Hora</strong>${sentAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</span>
         <span><strong>Enviado por</strong>${sentBy}</span>
-        <span><strong>Origem</strong>${order.origin || "-"}</span>
-        <span><strong>Data de entrega</strong>${formatDate(deliveryDate) || "____/____/________"}</span>
+        <span><strong>Recebido por</strong>${receivedBy || "-"}</span>
+        <span><strong>${label === "Galvanoplastia" ? "Data de retorno" : "Origem"}</strong>${label === "Galvanoplastia" ? formatShortDate(returnDate) || "__-__-__" : order.origin || "-"}</span>
       </div>
       <div class="totals">
         <span><strong>Total geral</strong>${totalPieces} pe\u00e7as</span>
@@ -2761,8 +2771,11 @@ function printGalvanoplastyProtocol(id) {
       </table>
       <p class="note">Controle interno por pedido. Confer\u00eancia detalhada deve ser feita no sistema pelo n\u00famero do pedido.</p>
       <div class="signatures">
-        <div class="line">Assinatura de quem enviou</div>
-        <div class="line">Data de retorno: ____/____/________</div>
+        ${
+          label === "Almoxarifado"
+            ? `<div class="line">Assinatura de quem enviou</div><div class="line">Recebido por: ${receivedBy || "________________________"}</div>`
+            : `<div class="line">Data do recebimento: ${formatShortDate(sentAt)}</div><div class="line">Data de retorno: ${formatShortDate(returnDate) || "__-__-__"}</div>`
+        }
       </div>
     </section>
   `;
@@ -3230,6 +3243,22 @@ function toIsoDate(date) {
 function formatDate(value) {
   if (!value) return "";
   return new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`));
+}
+
+function formatShortDate(value) {
+  if (!value) return "";
+  let date = value instanceof Date ? value : null;
+  if (!date) {
+    const text = String(value);
+    date = /^\d{4}-\d{2}-\d{2}$/.test(text) ? new Date(`${text}T00:00:00Z`) : new Date(text);
+  }
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("pt-BR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "2-digit",
+    timeZone: value instanceof Date ? undefined : "UTC",
+  }).format(date).replace(/\//g, "-");
 }
 
 function formatDateTime(value) {
