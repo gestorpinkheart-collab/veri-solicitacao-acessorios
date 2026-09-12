@@ -190,7 +190,6 @@
 
       <nav class="app-nav internal-only" aria-label="Menu principal">
         <button class="nav-button active" type="button" data-view="managementView" onclick="showView('managementView')">Gestão de pedidos</button>
-        <button class="nav-button" type="button" data-view="reportsView" onclick="showView('reportsView')">Relatórios</button>
         <button class="nav-button" type="button" data-view="dashboardView" onclick="showView('dashboardView')">Dashboard</button>
         <button class="nav-button master-only" type="button" data-view="masterView" onclick="showView('masterView')">Master</button>
       </nav>
@@ -203,7 +202,19 @@
                 <p class="eyebrow">Acompanhamento</p>
                 <h2>Gestão de pedidos</h2>
               </div>
-              <span id="orderCount">0 encontrados</span>
+              <div class="management-header-actions">
+                <span id="orderCount">0 encontrados</span>
+                <button class="action-button" id="printManagementSummary" type="button" title="Imprimir todos - Gerencial" aria-label="Imprimir todos - Gerencial">
+                  <svg viewBox="0 0 24 24" focusable="false">
+                    <path d="M4 4h16v4H4V4Zm0 6h16v10H4V10Zm3 3v2h10v-2H7Zm0 4v1h6v-1H7Z"/>
+                  </svg>
+                </button>
+                <button class="action-button" id="printManagementAnalytical" type="button" title="Imprimir todos - Analítico" aria-label="Imprimir todos - Analítico">
+                  <svg viewBox="0 0 24 24" focusable="false">
+                    <path d="M6 2h9l5 5v15H6a2 2 0 0 1-2-2V4c0-1.1.9-2 2-2Zm8 1.5V8h4.5L14 3.5ZM7 11h10v2H7v-2Zm0 4h10v2H7v-2Zm0 4h6v1H7v-1Z"/>
+                  </svg>
+                </button>
+              </div>
             </div>
             <div class="filters">
               <label>

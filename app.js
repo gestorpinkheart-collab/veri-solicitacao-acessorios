@@ -175,6 +175,8 @@ const elements = {
   searchInput: document.querySelector("#searchInput"),
   filterStatus: document.querySelector("#filterStatus"),
   filterPriority: document.querySelector("#filterPriority"),
+  printManagementSummary: document.querySelector("#printManagementSummary"),
+  printManagementAnalytical: document.querySelector("#printManagementAnalytical"),
   statusWidgets: document.querySelectorAll("[data-status-filter]"),
   widgetReceived: document.querySelector("#widgetReceived"),
   widgetProgress: document.querySelector("#widgetProgress"),
@@ -300,6 +302,8 @@ async function init() {
   elements.searchInput.addEventListener("input", render);
   elements.filterStatus.addEventListener("change", render);
   elements.filterPriority.addEventListener("change", render);
+  elements.printManagementSummary?.addEventListener("click", () => printManagementOrders("summary"));
+  elements.printManagementAnalytical?.addEventListener("click", () => printManagementOrders("analytical"));
   elements.statusWidgets.forEach((button) => {
     button.addEventListener("click", () => applyStatusWidgetFilter(button.dataset.statusFilter));
   });
@@ -2788,6 +2792,99 @@ function showCollaboratorOrderDetail(id) {
   elements.collaboratorOrderDetail.querySelector("[data-detail-clone]")?.addEventListener("click", () => cloneOrder(order.id));
   elements.collaboratorOrderDetail.querySelector("[data-detail-print]")?.addEventListener("click", () => printCollaboratorOrder(order.id));
   elements.collaboratorOrderDetail.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function printManagementOrders(type) {
+  if (!isInternalUser()) return;
+  const selectedOrders = getFilteredOrders();
+  if (!selectedOrders.length) {
+    alert("Nenhum pedido encontrado para imprimir com os filtros atuais.");
+    return;
+  }
+
+  const isAnalytical = type === "analytical";
+  const title = isAnalytical ? "Relatório analítico de pedidos" : "Relatório gerencial de pedidos";
+  const totalPieces = countPieces(selectedOrders);
+  const openOrders = selectedOrders.filter((order) => normalizeStatus(order.status) !== "Entregue").length;
+  const rows = selectedOrders
+    .map((order) => {
+      const pieces = countPieces([order]);
+      const items = Array.isArray(order.items) ? order.items : [];
+      const detail = isAnalytical
+        ? items.map((item) => `${item.quantity}x ${item.model} ${item.size} ${item.bath}`).join("<br>")
+        : compactReportItems(items);
+      return `
+        <tr>
+          <td><strong>${order.id}</strong><br>${formatDate(order.requestDate)}</td>
+          <td>${order.requester}<br><span>${order.origin}</span></td>
+          <td>${normalizeStatus(order.status)}<br><span>${order.priority}</span></td>
+          <td>${pieces}</td>
+          <td>${detail}</td>
+        </tr>
+      `;
+    })
+    .join("");
+
+  const html = `
+    <!doctype html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <title>${title}</title>
+        <style>
+          @page { size: A4 landscape; margin: 10mm; }
+          body { font-family: Arial, sans-serif; color: #1d2b26; margin: 0; }
+          header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #92ACA0; padding-bottom: 10px; margin-bottom: 12px; }
+          .brand { color: #2f4d40; font-size: 28px; font-weight: 900; letter-spacing: 1px; }
+          h1 { font-size: 17px; margin: 4px 0 0; text-transform: uppercase; }
+          .summary { display: flex; gap: 8px; margin-bottom: 12px; }
+          .summary span { border: 1px solid #d5e0db; border-radius: 8px; padding: 8px 10px; font-size: 11px; font-weight: 700; }
+          table { width: 100%; border-collapse: collapse; font-size: ${isAnalytical ? "9.5px" : "10.5px"}; }
+          th, td { border-bottom: 1px solid #d5e0db; padding: 6px; text-align: left; vertical-align: top; }
+          th { background: #edf3f0; color: #2f4d40; text-transform: uppercase; font-size: 9px; }
+          td span { color: #597066; }
+          td:nth-child(4) { text-align: right; font-weight: 700; width: 55px; }
+        </style>
+      </head>
+      <body>
+        <header>
+          <div>
+            <div class="brand">VERI</div>
+            <h1>${title}</h1>
+          </div>
+          <div>${formatDateTime(new Date().toISOString())}</div>
+        </header>
+        <div class="summary">
+          <span>${selectedOrders.length} pedido(s)</span>
+          <span>${openOrders} em aberto</span>
+          <span>${totalPieces} peça(s)</span>
+          <span>Formato: ${isAnalytical ? "Analítico" : "Gerencial"}</span>
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>Pedido / Data</th>
+              <th>Solicitante / Loja</th>
+              <th>Status / Prioridade</th>
+              <th>Peças</th>
+              <th>${isAnalytical ? "Itens completos" : "Resumo"}</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </body>
+    </html>
+  `;
+
+  const printWindow = window.open("", "_blank");
+  if (!printWindow) {
+    alert("Não foi possível abrir a impressão. Verifique se o navegador bloqueou pop-ups.");
+    return;
+  }
+  printWindow.document.write(html);
+  printWindow.document.close();
+  printWindow.focus();
+  printWindow.print();
 }
 
 async function registerGalvanoplastyShipment(id) {

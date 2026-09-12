@@ -674,6 +674,25 @@ label,
   font-size: 0.82rem;
 }
 
+.management-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.management-header-actions .action-button {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  border-radius: 9px;
+}
+
+.management-header-actions .action-button svg {
+  width: 17px;
+  height: 17px;
+}
+
 .metric strong {
   display: block;
   margin-top: 8px;
