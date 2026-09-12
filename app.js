@@ -2832,52 +2832,57 @@ function printManagementOrders(type) {
         <meta charset="utf-8">
         <title>${title}</title>
         <style>
-          @page { size: A4 landscape; margin: 10mm; }
+          @page { size: A4 landscape; margin: 7mm; }
           * { box-sizing: border-box; }
-          body { font-family: Arial, sans-serif; color: #1d2b26; margin: 0; }
+          html, body { width: 100%; margin: 0; padding: 0; }
+          body { font-family: Arial, sans-serif; color: #1d2b26; overflow: hidden; }
+          .sheet { width: 100%; max-width: 283mm; margin: 0 auto; overflow: hidden; }
           header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #92ACA0; padding-bottom: 10px; margin-bottom: 12px; }
-          .print-logo { display: block; width: 92px; max-height: 42px; object-fit: contain; object-position: left center; margin-bottom: 4px; }
-          h1 { font-size: 17px; margin: 4px 0 0; text-transform: uppercase; }
-          .summary { display: flex; gap: 8px; margin-bottom: 12px; }
-          .summary span { border: 1px solid #d5e0db; border-radius: 8px; padding: 8px 10px; font-size: 11px; font-weight: 700; }
-          table { width: 100%; max-width: 100%; border-collapse: collapse; table-layout: fixed; font-size: ${isAnalytical ? "9px" : "10px"}; }
-          th, td { border-bottom: 1px solid #d5e0db; padding: 6px; text-align: left; vertical-align: top; }
-          th { background: #edf3f0; color: #2f4d40; text-transform: uppercase; font-size: 9px; }
+          .print-logo { display: block; width: 84px; max-height: 34px; object-fit: contain; object-position: left center; margin-bottom: 3px; }
+          h1 { font-size: 14px; margin: 3px 0 0; text-transform: uppercase; }
+          .printed-at { font-size: 9px; color: #597066; white-space: nowrap; }
+          .summary { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+          .summary span { border: 1px solid #d5e0db; border-radius: 7px; padding: 6px 8px; font-size: 9.5px; font-weight: 700; }
+          table { width: 100%; max-width: 100%; border-collapse: collapse; table-layout: fixed; font-size: ${isAnalytical ? "7.6px" : "8.4px"}; }
+          th, td { border-bottom: 1px solid #d5e0db; padding: 4px 5px; text-align: left; vertical-align: top; line-height: 1.22; }
+          th { background: #edf3f0; color: #2f4d40; text-transform: uppercase; font-size: 7.6px; }
           td { overflow-wrap: anywhere; word-break: break-word; }
           td span { color: #597066; }
-          th:nth-child(1), td:nth-child(1) { width: 20%; }
-          th:nth-child(2), td:nth-child(2) { width: 22%; }
-          th:nth-child(3), td:nth-child(3) { width: 15%; }
-          th:nth-child(4), td:nth-child(4) { width: 8%; text-align: right; font-weight: 700; }
-          th:nth-child(5), td:nth-child(5) { width: 35%; }
+          th:nth-child(1), td:nth-child(1) { width: 17%; }
+          th:nth-child(2), td:nth-child(2) { width: 18%; }
+          th:nth-child(3), td:nth-child(3) { width: 14%; }
+          th:nth-child(4), td:nth-child(4) { width: 7%; text-align: right; font-weight: 700; }
+          th:nth-child(5), td:nth-child(5) { width: 44%; }
         </style>
       </head>
       <body>
-        <header>
-          <div>
-            <img class="print-logo" src="logo-veri-original.jpg" alt="VERI">
-            <h1>${title}</h1>
+        <main class="sheet">
+          <header>
+            <div>
+              <img class="print-logo" src="logo-veri.png" alt="VERI">
+              <h1>${title}</h1>
+            </div>
+            <div class="printed-at">${formatDateTime(new Date().toISOString())}</div>
+          </header>
+          <div class="summary">
+            <span>${selectedOrders.length} pedido(s)</span>
+            <span>${openOrders} em aberto</span>
+            <span>${totalPieces} peça(s)</span>
+            <span>Formato: ${isAnalytical ? "Analítico" : "Gerencial"}</span>
           </div>
-          <div>${formatDateTime(new Date().toISOString())}</div>
-        </header>
-        <div class="summary">
-          <span>${selectedOrders.length} pedido(s)</span>
-          <span>${openOrders} em aberto</span>
-          <span>${totalPieces} peça(s)</span>
-          <span>Formato: ${isAnalytical ? "Analítico" : "Gerencial"}</span>
-        </div>
-        <table>
-          <thead>
-            <tr>
-              <th>Pedido / Data</th>
-              <th>Solicitante / Loja</th>
-              <th>Status / Prioridade</th>
-              <th>Peças</th>
-              <th>${isAnalytical ? "Itens completos" : "Resumo"}</th>
-            </tr>
-          </thead>
-          <tbody>${rows}</tbody>
-        </table>
+          <table>
+            <thead>
+              <tr>
+                <th>Pedido / Data</th>
+                <th>Solicitante / Loja</th>
+                <th>Status / Prioridade</th>
+                <th>Peças</th>
+                <th>${isAnalytical ? "Itens completos" : "Resumo"}</th>
+              </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </main>
       </body>
     </html>
   `;
@@ -2959,7 +2964,7 @@ function printGalvanoplastyProtocol(id) {
     <section class="copy">
       <header>
         <div>
-          <img class="print-logo" src="logo-veri-original.jpg" alt="VERI">
+          <img class="print-logo" src="logo-veri.png" alt="VERI">
           <h1>Controle de envio para Galvanoplastia</h1>
         </div>
         <span>Via: ${label}</span>
@@ -3096,7 +3101,7 @@ function printCollaboratorOrder(id) {
             <h1>Pedido ${order.id}</h1>
             <p>Protocolo de pedido para consulta, confer\u00eancia e impress\u00e3o</p>
           </div>
-          <img class="print-logo" src="logo-veri-original.jpg" alt="VERI">
+          <img class="print-logo" src="logo-veri.png" alt="VERI">
         </div>
         <div class="meta">
           <span><strong>Status</strong><br>${normalizeStatus(order.status)}</span>

@@ -135,7 +135,7 @@ h3 {
   display: block;
   width: min(310px, 56vw);
   margin: 0 0 34px;
-  filter: drop-shadow(0 22px 44px rgba(7, 27, 21, 0.2));
+  filter: brightness(0) invert(1) drop-shadow(0 22px 44px rgba(7, 27, 21, 0.2));
 }
 
 .entry-hero h1 {
