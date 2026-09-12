@@ -196,12 +196,10 @@ const elements = {
   collaboratorOrderDetail: document.querySelector("#collaboratorOrderDetail"),
   refreshMyOrders: document.querySelector("#refreshMyOrders"),
   orderCount: document.querySelector("#orderCount"),
-  statusChart: document.querySelector("#statusChart"),
-  bathChart: document.querySelector("#bathChart"),
-  originChart: document.querySelector("#originChart"),
-  frequencyChart: document.querySelector("#frequencyChart"),
-  requesterChart: document.querySelector("#requesterChart"),
-  requesterPiecesChart: document.querySelector("#requesterPiecesChart"),
+  priorityPieChart: document.querySelector("#priorityPieChart"),
+  monthlyOriginChart: document.querySelector("#monthlyOriginChart"),
+  originRankingChart: document.querySelector("#originRankingChart"),
+  requesterRankingChart: document.querySelector("#requesterRankingChart"),
   metricTotal: document.querySelector("#metricTotal"),
   metricUrgent: document.querySelector("#metricUrgent"),
   metricOpen: document.querySelector("#metricOpen"),
@@ -2353,16 +2351,10 @@ function applyStatusWidgetFilter(status) {
 }
 
 function renderCharts() {
-  renderBarChart(elements.statusChart, countByStatus(), statuses);
-  renderBarChart(elements.bathChart, countByBath(), Object.keys(countByBath()));
-  const originCounts = countByOrigin();
-  const frequencyCounts = countByDate();
-  renderBarChart(elements.originChart, originCounts, Object.keys(originCounts));
-  renderBarChart(elements.frequencyChart, frequencyCounts, Object.keys(frequencyCounts));
-  const requesterCounts = countByRequester();
-  const requesterPieces = countPiecesByRequester();
-  renderBarChart(elements.requesterChart, requesterCounts, Object.keys(requesterCounts));
-  renderBarChart(elements.requesterPiecesChart, requesterPieces, Object.keys(requesterPieces));
+  renderPieChart(elements.priorityPieChart, countByPriority());
+  renderColumnChart(elements.monthlyOriginChart, countByOriginMonth());
+  renderRankingChart(elements.originRankingChart, countByOrigin(), "pedido(s)");
+  renderRankingChart(elements.requesterRankingChart, countByRequester(), "pedido(s)");
 }
 
 function renderDashboardTable() {
@@ -2401,6 +2393,7 @@ function renderDashboardTable() {
 }
 
 function renderBarChart(container, data, labels) {
+  if (!container) return;
   container.innerHTML = "";
   const max = Math.max(1, ...Object.values(data));
   const visibleLabels = labels.length ? labels : ["Sem dados"];
@@ -2415,6 +2408,83 @@ function renderBarChart(container, data, labels) {
       <strong>${value}</strong>
     `;
     container.append(line);
+  });
+}
+
+function renderPieChart(container, data) {
+  if (!container) return;
+  const entries = Object.entries(data).filter(([, value]) => value > 0);
+  const total = entries.reduce((sum, [, value]) => sum + value, 0);
+  container.innerHTML = "";
+  if (!total) {
+    container.innerHTML = '<div class="empty mini-empty">Sem dados no período.</div>';
+    return;
+  }
+
+  let cursor = 0;
+  const colors = ["#2f4d40", "#c9a24a", "#527e86", "#7a8bb1"];
+  const segments = entries.map(([label, value], index) => {
+    const start = cursor;
+    cursor += (value / total) * 100;
+    return `${colors[index % colors.length]} ${start}% ${cursor}%`;
+  });
+
+  const chart = document.createElement("div");
+  chart.className = "pie-visual";
+  chart.style.background = `conic-gradient(${segments.join(", ")})`;
+
+  const legend = document.createElement("div");
+  legend.className = "chart-legend";
+  legend.innerHTML = entries
+    .map(([label, value], index) => `
+      <span><i style="background:${colors[index % colors.length]}"></i>${label}: <strong>${value}</strong></span>
+    `)
+    .join("");
+
+  container.append(chart, legend);
+}
+
+function renderColumnChart(container, data) {
+  if (!container) return;
+  const entries = Object.entries(data);
+  const max = Math.max(1, ...entries.map(([, value]) => value));
+  container.innerHTML = "";
+  if (!entries.length) {
+    container.innerHTML = '<div class="empty mini-empty">Sem dados no período.</div>';
+    return;
+  }
+
+  entries.forEach(([label, value]) => {
+    const column = document.createElement("div");
+    column.className = "column-item";
+    column.innerHTML = `
+      <div class="column-bar" style="height:${Math.max(12, (value / max) * 118)}px"><strong>${value}</strong></div>
+      <span>${label}</span>
+    `;
+    container.append(column);
+  });
+}
+
+function renderRankingChart(container, data, suffix) {
+  if (!container) return;
+  const entries = Object.entries(data);
+  const max = Math.max(1, ...entries.map(([, value]) => value));
+  container.innerHTML = "";
+  if (!entries.length) {
+    container.innerHTML = '<div class="empty mini-empty">Sem dados no período.</div>';
+    return;
+  }
+
+  entries.forEach(([label, value], index) => {
+    const row = document.createElement("div");
+    row.className = "ranking-row";
+    row.innerHTML = `
+      <span class="ranking-position">${index + 1}</span>
+      <span class="ranking-label">${label}</span>
+      <div class="ranking-track"><div style="width:${(value / max) * 100}%"></div></div>
+      <strong>${value} ${suffix}</strong>
+    `;
+    container.append(row);
   });
 }
 
@@ -3134,13 +3204,33 @@ function countByBath() {
   }, {});
 }
 
+function countByPriority() {
+  const counts = getDashboardOrders().reduce((acc, order) => {
+    const priority = order.priority || "Sem prioridade";
+    acc[priority] = (acc[priority] || 0) + 1;
+    return acc;
+  }, {});
+  return sortCountObject(counts, 4);
+}
+
 function countByOrigin() {
   const counts = getDashboardOrders().reduce((acc, order) => {
     const origin = order.origin || "Sem loja";
     acc[origin] = (acc[origin] || 0) + 1;
     return acc;
   }, {});
-  return sortCountObject(counts);
+  return sortCountObject(counts, 8);
+}
+
+function countByOriginMonth() {
+  const counts = getDashboardOrders().reduce((acc, order) => {
+    const origin = order.origin || "Sem loja";
+    const month = order.requestDate ? order.requestDate.slice(0, 7).split("-").reverse().join("/") : "Sem mês";
+    const label = `${month} · ${origin}`;
+    acc[label] = (acc[label] || 0) + 1;
+    return acc;
+  }, {});
+  return sortCountObject(counts, 10);
 }
 
 function countByDate() {
@@ -3149,7 +3239,7 @@ function countByDate() {
     acc[date] = (acc[date] || 0) + 1;
     return acc;
   }, {});
-  return sortCountObject(counts);
+  return sortCountObject(counts, 8);
 }
 
 function countByRequester() {
@@ -3158,7 +3248,7 @@ function countByRequester() {
     acc[requester] = (acc[requester] || 0) + 1;
     return acc;
   }, {});
-  return sortCountObject(counts);
+  return sortCountObject(counts, 8);
 }
 
 function countPiecesByRequester() {
@@ -3167,11 +3257,11 @@ function countPiecesByRequester() {
     acc[requester] = (acc[requester] || 0) + countPieces([order]);
     return acc;
   }, {});
-  return sortCountObject(counts);
+  return sortCountObject(counts, 8);
 }
 
-function sortCountObject(data) {
-  return Object.fromEntries(Object.entries(data).sort((a, b) => b[1] - a[1]).slice(0, 8));
+function sortCountObject(data, limit = 8) {
+  return Object.fromEntries(Object.entries(data).sort((a, b) => b[1] - a[1]).slice(0, limit));
 }
 
 function nextOrderId() {
