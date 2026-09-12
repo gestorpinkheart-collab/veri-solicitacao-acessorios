@@ -2833,23 +2833,29 @@ function printManagementOrders(type) {
         <title>${title}</title>
         <style>
           @page { size: A4 landscape; margin: 10mm; }
+          * { box-sizing: border-box; }
           body { font-family: Arial, sans-serif; color: #1d2b26; margin: 0; }
           header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #92ACA0; padding-bottom: 10px; margin-bottom: 12px; }
-          .brand { color: #2f4d40; font-size: 28px; font-weight: 900; letter-spacing: 1px; }
+          .print-logo { display: block; width: 92px; max-height: 42px; object-fit: contain; object-position: left center; margin-bottom: 4px; }
           h1 { font-size: 17px; margin: 4px 0 0; text-transform: uppercase; }
           .summary { display: flex; gap: 8px; margin-bottom: 12px; }
           .summary span { border: 1px solid #d5e0db; border-radius: 8px; padding: 8px 10px; font-size: 11px; font-weight: 700; }
-          table { width: 100%; border-collapse: collapse; font-size: ${isAnalytical ? "9.5px" : "10.5px"}; }
+          table { width: 100%; max-width: 100%; border-collapse: collapse; table-layout: fixed; font-size: ${isAnalytical ? "9px" : "10px"}; }
           th, td { border-bottom: 1px solid #d5e0db; padding: 6px; text-align: left; vertical-align: top; }
           th { background: #edf3f0; color: #2f4d40; text-transform: uppercase; font-size: 9px; }
+          td { overflow-wrap: anywhere; word-break: break-word; }
           td span { color: #597066; }
-          td:nth-child(4) { text-align: right; font-weight: 700; width: 55px; }
+          th:nth-child(1), td:nth-child(1) { width: 20%; }
+          th:nth-child(2), td:nth-child(2) { width: 22%; }
+          th:nth-child(3), td:nth-child(3) { width: 15%; }
+          th:nth-child(4), td:nth-child(4) { width: 8%; text-align: right; font-weight: 700; }
+          th:nth-child(5), td:nth-child(5) { width: 35%; }
         </style>
       </head>
       <body>
         <header>
           <div>
-            <div class="brand">VERI</div>
+            <img class="print-logo" src="logo-veri-original.jpg" alt="VERI">
             <h1>${title}</h1>
           </div>
           <div>${formatDateTime(new Date().toISOString())}</div>
@@ -2953,7 +2959,7 @@ function printGalvanoplastyProtocol(id) {
     <section class="copy">
       <header>
         <div>
-          <strong class="brand">VERI</strong>
+          <img class="print-logo" src="logo-veri-original.jpg" alt="VERI">
           <h1>Controle de envio para Galvanoplastia</h1>
         </div>
         <span>Via: ${label}</span>
@@ -3000,7 +3006,7 @@ function printGalvanoplastyProtocol(id) {
           .copy { height: 136mm; padding: 7mm; border: 1px solid #92ACA0; overflow: hidden; page-break-inside: avoid; }
           .copy + .copy { margin-top: 5mm; }
           header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #92ACA0; padding-bottom: 4mm; margin-bottom: 4mm; }
-          .brand { font-size: 22px; letter-spacing: 1px; color: #2f4d40; }
+          .print-logo { display: block; width: 76px; max-height: 30px; object-fit: contain; object-position: left center; margin-bottom: 2mm; }
           h1 { font-size: 13px; margin: 2mm 0 0; text-transform: uppercase; }
           header span { font-size: 13px; font-weight: 700; background: #e8f0ec; border-radius: 999px; padding: 7px 12px; }
           .meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2.5mm; margin-bottom: 3mm; font-size: 10px; }
@@ -3008,8 +3014,9 @@ function printGalvanoplastyProtocol(id) {
           .meta strong { display: block; font-size: 9px; color: #597066; text-transform: uppercase; margin-bottom: 2px; }
           .totals { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2.5mm; margin-bottom: 4mm; font-size: 11px; font-weight: 700; }
           .totals strong { display: block; font-size: 9px; color: #597066; text-transform: uppercase; margin-bottom: 2px; }
-          table { width: 100%; border-collapse: collapse; font-size: 10px; }
+          table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 10px; }
           th, td { border-bottom: 1px solid #d5e0db; padding: 4px 5px; text-align: left; }
+          td { overflow-wrap: anywhere; word-break: break-word; }
           th { background: #edf3f0; font-size: 9px; text-transform: uppercase; }
           th:nth-child(2), td:nth-child(2) { width: 32mm; }
           th:last-child, td:last-child { text-align: right; width: 22mm; }
@@ -3066,14 +3073,18 @@ function printCollaboratorOrder(id) {
         <meta charset="utf-8">
         <title>${order.id}</title>
         <style>
-          body { font-family: Arial, sans-serif; color: #1d2b26; margin: 24px; }
+          @page { size: A4 portrait; margin: 10mm; }
+          * { box-sizing: border-box; }
+          body { font-family: Arial, sans-serif; color: #1d2b26; margin: 0; }
           .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #92ACA0; padding-bottom: 12px; margin-bottom: 16px; }
+          .print-logo { display: block; width: 90px; max-height: 40px; object-fit: contain; object-position: right center; }
           h1 { font-size: 20px; margin: 0 0 6px; }
           p { margin: 4px 0; }
           .meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0; }
           .meta span { border: 1px solid #d5e0db; border-radius: 8px; padding: 8px; }
-          table { width: 100%; border-collapse: collapse; font-size: 12px; }
+          table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12px; }
           th, td { border-bottom: 1px solid #d5e0db; padding: 8px; text-align: left; }
+          td { overflow-wrap: anywhere; word-break: break-word; }
           th { background: #edf3f0; }
           .sign { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; margin-top: 34px; }
           .line { border-top: 1px solid #1d2b26; padding-top: 6px; }
@@ -3085,7 +3096,7 @@ function printCollaboratorOrder(id) {
             <h1>Pedido ${order.id}</h1>
             <p>Protocolo de pedido para consulta, confer\u00eancia e impress\u00e3o</p>
           </div>
-          <strong>VERI</strong>
+          <img class="print-logo" src="logo-veri-original.jpg" alt="VERI">
         </div>
         <div class="meta">
           <span><strong>Status</strong><br>${normalizeStatus(order.status)}</span>
