@@ -18,6 +18,7 @@ const statuses = [
   "Em prepara\u00e7\u00e3o de banho (galvanoplastia)",
   "P\u00f3s banho",
   "Prepara\u00e7\u00e3o final",
+  "Entrega parcial",
   "Entregue",
 ];
 
@@ -183,6 +184,7 @@ const elements = {
   widgetBathPrep: document.querySelector("#widgetBathPrep"),
   widgetPostBath: document.querySelector("#widgetPostBath"),
   widgetFinalPrep: document.querySelector("#widgetFinalPrep"),
+  widgetPartial: document.querySelector("#widgetPartial"),
   widgetDelivered: document.querySelector("#widgetDelivered"),
   dashboardDateFrom: document.querySelector("#dashboardDateFrom"),
   dashboardDateTo: document.querySelector("#dashboardDateTo"),
@@ -1403,6 +1405,7 @@ async function handleSubmit(event) {
       status: isInternalUser() ? elements.status.value : statuses[0],
       notes: elements.notes.value.trim(),
       items: pricedItems,
+      deliveries: existingOrder?.deliveries || [],
       updatedBy: currentSession.name,
       updatedByRole: currentSession.role,
     };
@@ -1479,6 +1482,51 @@ function recalculateExistingItemCost(item, existingItem) {
     lineCost: roundMoney(totalUnitCost * quantity),
     costSnapshot: existingItem.costSnapshot || {},
   };
+}
+
+function normalizeDeliveries(value) {
+  return Array.isArray(value)
+    ? value.map((delivery) => ({
+        id: delivery.id || `ENT-${Date.now()}`,
+        at: delivery.at || "",
+        user: repairText(delivery.user || ""),
+        role: delivery.role || "",
+        notes: repairText(delivery.notes || ""),
+        items: Array.isArray(delivery.items)
+          ? delivery.items.map((item) => ({
+              index: Number(item.index || 0),
+              model: repairText(item.model || ""),
+              size: repairText(item.size || ""),
+              bath: normalizeBath(repairText(item.bath || "")),
+              quantity: Number(item.quantity || 0),
+            })).filter((item) => item.quantity > 0)
+          : [],
+      }))
+    : [];
+}
+
+function deliveredQuantityForItem(order, itemIndex) {
+  return normalizeDeliveries(order.deliveries).reduce((sum, delivery) => {
+    const deliveredItem = (delivery.items || []).find((item) => Number(item.index) === Number(itemIndex));
+    return sum + Number(deliveredItem?.quantity || 0);
+  }, 0);
+}
+
+function deliveryTotals(order) {
+  const total = countPieces([order]);
+  const delivered = (order.items || []).reduce((sum, _item, index) => sum + deliveredQuantityForItem(order, index), 0);
+  return {
+    total,
+    delivered,
+    pending: Math.max(0, total - delivered),
+  };
+}
+
+function deliveryStatusForOrder(order) {
+  const totals = deliveryTotals(order);
+  if (totals.total > 0 && totals.pending === 0) return "Entregue";
+  if (totals.delivered > 0) return "Entrega parcial";
+  return normalizeStatus(order.status);
 }
 
 function enrichItemCost(item) {
@@ -1698,8 +1746,22 @@ async function deleteOrder(id) {
 
 async function updateStatus(id, status) {
   if (!isInternalUser()) return;
+  const order = orders.find((item) => item.id === id);
+  if (!order) return;
+  const normalizedStatus = normalizeStatus(status);
+  const totals = deliveryTotals(order);
+  if (normalizedStatus === "Entregue" && totals.total > 0 && totals.pending > 0) {
+    alert("Ainda existe saldo pendente neste pedido. Registre a entrega parcial ou complete as quantidades antes de marcar como Entregue.");
+    render();
+    return;
+  }
+  if (normalizedStatus === "Entrega parcial" && totals.delivered === 0) {
+    alert("Para usar Entrega parcial, primeiro registre as quantidades entregues pelo botão de entrega do pedido.");
+    render();
+    return;
+  }
   try {
-    await patchOrder(id, { status, updatedBy: currentSession.name, updatedByRole: currentSession.role });
+    await patchOrder(id, { status: normalizedStatus, updatedBy: currentSession.name, updatedByRole: currentSession.role });
   } catch (error) {
     alert(`N\u00e3o foi poss\u00edvel alterar o status no banco.\n\n${error.message}`);
   }
@@ -1712,6 +1774,125 @@ async function updateDueDate(id, dueDate) {
     await patchOrder(id, { dueDate, updatedBy: currentSession.name, updatedByRole: currentSession.role });
   } catch (error) {
     alert(`N\u00e3o foi poss\u00edvel salvar a previs\u00e3o de entrega no banco.\n\n${error.message}`);
+  }
+  render();
+}
+
+function registerPartialDelivery(id) {
+  if (!isInternalUser()) return;
+  const order = orders.find((item) => item.id === id);
+  if (!order) return;
+
+  const totals = deliveryTotals(order);
+  if (totals.total > 0 && totals.pending === 0) {
+    alert("Este pedido já está com 100% das peças entregues.");
+    return;
+  }
+
+  document.querySelector(".delivery-modal")?.remove();
+  const modal = document.createElement("div");
+  modal.className = "delivery-modal";
+  modal.innerHTML = `
+    <div class="delivery-dialog" role="dialog" aria-modal="true" aria-label="Registrar entrega do pedido">
+      <div class="panel-title-row">
+        <div>
+          <p class="eyebrow">Entrega do pedido</p>
+          <h2>${order.id}</h2>
+        </div>
+        <button class="action-button" type="button" data-close-delivery title="Fechar" aria-label="Fechar">×</button>
+      </div>
+      <div class="delivery-summary">
+        <span><strong>${totals.total}</strong> solicitadas</span>
+        <span><strong>${totals.delivered}</strong> entregues</span>
+        <span><strong>${totals.pending}</strong> pendentes</span>
+      </div>
+      <div class="delivery-list">
+        ${(order.items || []).map((item, index) => {
+          const requested = Number(item.quantity || 0);
+          const delivered = deliveredQuantityForItem(order, index);
+          const pending = Math.max(0, requested - delivered);
+          return `
+            <label class="delivery-row ${pending ? "" : "done"}">
+              <span>
+                <strong>Item ${index + 1}</strong>
+                ${item.model} · ${item.size} · ${item.bath}
+                <small>Solicitado: ${requested} · Entregue: ${delivered} · Pendente: ${pending}</small>
+              </span>
+              <input type="number" min="0" max="${pending}" step="1" value="0" ${pending ? "" : "disabled"} data-delivery-index="${index}" aria-label="Quantidade entregue do item ${index + 1}">
+            </label>
+          `;
+        }).join("")}
+      </div>
+      <label>
+        Observação
+        <textarea data-delivery-notes rows="3" placeholder="Opcional"></textarea>
+      </label>
+      <p class="login-error" data-delivery-error role="alert"></p>
+      <div class="login-actions">
+        <button class="text-button" type="button" data-close-delivery>Cancelar</button>
+        <button class="primary-button" type="button" data-save-delivery>Registrar entrega</button>
+      </div>
+    </div>
+  `;
+  document.body.append(modal);
+  modal.querySelectorAll("[data-close-delivery]").forEach((button) => button.addEventListener("click", () => modal.remove()));
+  modal.querySelector("[data-save-delivery]")?.addEventListener("click", () => savePartialDelivery(order.id, modal));
+}
+
+async function savePartialDelivery(id, modal) {
+  const order = orders.find((item) => item.id === id);
+  if (!order) return;
+  const errorElement = modal.querySelector("[data-delivery-error]");
+  const deliveryItems = [...modal.querySelectorAll("[data-delivery-index]")]
+    .map((input) => {
+      const index = Number(input.dataset.deliveryIndex);
+      const item = order.items[index];
+      const quantity = Number(input.value || 0);
+      const pending = Math.max(0, Number(item.quantity || 0) - deliveredQuantityForItem(order, index));
+      return { input, index, item, quantity, pending };
+    })
+    .filter((row) => row.quantity > 0);
+
+  const invalid = deliveryItems.find((row) => row.quantity > row.pending);
+  if (invalid) {
+    errorElement.textContent = `O item ${invalid.index + 1} tem saldo pendente de ${invalid.pending}.`;
+    return;
+  }
+  if (!deliveryItems.length) {
+    errorElement.textContent = "Informe pelo menos uma quantidade entregue.";
+    return;
+  }
+
+  const deliveries = [
+    ...normalizeDeliveries(order.deliveries),
+    {
+      id: `ENT-${new Date().toISOString().replace(/\D/g, "").slice(0, 14)}`,
+      at: new Date().toISOString(),
+      user: currentSession?.name || "Sistema",
+      role: currentSession?.role || "",
+      notes: modal.querySelector("[data-delivery-notes]")?.value.trim() || "",
+      items: deliveryItems.map((row) => ({
+        index: row.index,
+        model: row.item.model,
+        size: row.item.size,
+        bath: row.item.bath,
+        quantity: row.quantity,
+      })),
+    },
+  ];
+  const nextStatus = deliveryStatusForOrder({ ...order, deliveries });
+
+  try {
+    await patchOrder(id, {
+      deliveries,
+      status: nextStatus,
+      updatedBy: currentSession.name,
+      updatedByRole: currentSession.role,
+    });
+    modal.remove();
+    alert(`Entrega registrada. Status atual: ${nextStatus}.`);
+  } catch (error) {
+    errorElement.textContent = error.message || "Não foi possível registrar a entrega.";
   }
   render();
 }
@@ -2273,7 +2454,8 @@ function orderSortByStatus(a, b) {
     "Em prepara\u00e7\u00e3o de banho (galvanoplastia)": 2,
     "P\u00f3s banho": 3,
     "Prepara\u00e7\u00e3o final": 4,
-    Entregue: 5,
+    "Entrega parcial": 5,
+    Entregue: 6,
   };
   const statusDiff = (order[normalizeStatus(a.status)] ?? 9) - (order[normalizeStatus(b.status)] ?? 9);
   if (statusDiff) return statusDiff;
@@ -2290,6 +2472,7 @@ function statusClass(status) {
   if (currentStatus === "Em prepara\u00e7\u00e3o de banho (galvanoplastia)") return "order-bath";
   if (currentStatus === "P\u00f3s banho") return "order-post-bath";
   if (currentStatus === "Prepara\u00e7\u00e3o final") return "order-final-prep";
+  if (currentStatus === "Entrega parcial") return "order-partial";
   if (currentStatus === "Entregue") return "order-delivered";
   return "";
 }
@@ -2341,6 +2524,7 @@ function renderStatusWidgets() {
   if (elements.widgetBathPrep) elements.widgetBathPrep.textContent = countStatus("Em prepara\u00e7\u00e3o de banho (galvanoplastia)");
   if (elements.widgetPostBath) elements.widgetPostBath.textContent = countStatus("P\u00f3s banho");
   if (elements.widgetFinalPrep) elements.widgetFinalPrep.textContent = countStatus("Prepara\u00e7\u00e3o final");
+  if (elements.widgetPartial) elements.widgetPartial.textContent = countStatus("Entrega parcial");
   elements.widgetDelivered.textContent = countStatus("Entregue");
   elements.statusWidgets.forEach((button) => {
     button.classList.toggle("active", elements.filterStatus.value === button.dataset.statusFilter);
@@ -2532,6 +2716,7 @@ function buildOrderCard(order, { mode }) {
   const displayStatus = normalizeStatus(order.status);
   const isExpanded = expandedOrderIds.has(order.id);
   const totalPieces = countPieces([order]);
+  const deliveryTotalsInfo = deliveryTotals(order);
   const priorityClass = order.priority === "Urgente" ? "urgent" : "";
   const canEdit = canManageOrder(order);
   const items = Array.isArray(order.items) ? order.items : [];
@@ -2553,6 +2738,8 @@ function buildOrderCard(order, { mode }) {
       </div>
       <div class="order-kpis">
         <span><strong>${totalPieces}</strong> pe\u00e7as</span>
+        <span><strong>${deliveryTotalsInfo.delivered}</strong> entregues</span>
+        <span><strong>${deliveryTotalsInfo.pending}</strong> pendentes</span>
         <span><strong>${formatDate(order.requestDate)}</strong> abertura</span>
         <span><strong>${formatDate(order.dueDate) || "Sem previs\u00e3o"}</strong> previs\u00e3o</span>
         <span><strong>${leadTimeText(order)}</strong> lead time</span>
@@ -2575,7 +2762,11 @@ function buildOrderCard(order, { mode }) {
     ${isExpanded ? `
       <div class="order-expanded-body">
         <ul class="order-items expanded-items">
-          ${items.map((item) => `<li>${item.quantity}x ${item.model} \u00b7 ${item.size} \u00b7 ${item.bath}</li>`).join("")}
+          ${items.map((item, index) => {
+            const delivered = deliveredQuantityForItem(order, index);
+            const pending = Math.max(0, Number(item.quantity || 0) - delivered);
+            return `<li>${item.quantity}x ${item.model} \u00b7 ${item.size} \u00b7 ${item.bath} <span class="delivery-inline">Entregue: ${delivered} · Pendente: ${pending}</span></li>`;
+          }).join("")}
         </ul>
         ${order.notes ? `<p class="detail-notes"><strong>Observa\u00e7\u00f5es:</strong> ${order.notes}</p>` : ""}
       </div>
@@ -2614,6 +2805,11 @@ function buildOrderCard(order, { mode }) {
             <path d="M12.1 3a8.9 8.9 0 0 0-7.6 13.5L3.4 21l4.6-1.1A8.9 8.9 0 1 0 12.1 3Zm0 2a6.9 6.9 0 1 1-3.5 12.8l-.4-.2-2.1.5.5-2-.3-.4A6.9 6.9 0 0 1 12.1 5Zm-3 3.6c-.2 0-.5.1-.7.3-.2.2-.8.8-.8 1.9s.8 2.2.9 2.4c.1.1 1.6 2.6 4 3.5 2 .8 2.4.6 2.8.6.4 0 1.4-.6 1.6-1.1.2-.6.2-1 .1-1.1-.1-.1-.2-.2-.5-.3l-1.6-.8c-.2-.1-.4-.1-.6.2l-.7.9c-.1.2-.3.2-.5.1-.3-.1-1.1-.4-2-1.2-.7-.7-1.2-1.5-1.4-1.7-.1-.2 0-.4.1-.5l.4-.5c.1-.2.2-.3.3-.5.1-.2.1-.4 0-.5l-.7-1.7c-.2-.4-.4-.4-.7-.4Z"/>
           </svg>
         </a>` : ""}
+        ${isManagement ? `<button class="action-button delivery-action" type="button" data-partial-delivery="${order.id}" title="Registrar entrega parcial ou final" aria-label="Registrar entrega parcial ou final">
+          <svg viewBox="0 0 24 24" focusable="false">
+            <path d="M3 4h12v10H3V4Zm14 4h2.5l1.5 2.5V14h-4V8ZM6.5 20a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5Zm11 0a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5ZM5 6v6h8V6H5Z"/>
+          </svg>
+        </button>` : ""}
         ${isManagement ? `<button class="action-button galvanoplasty-action" type="button" data-galvanoplasty-send="${order.id}" title="Registrar envio para Galvanoplastia" aria-label="Registrar envio para Galvanoplastia">
           <svg viewBox="0 0 24 24" focusable="false">
             <path d="M4 4h10l6 6v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm9 1.5V11h5.5L13 5.5ZM6 13h10v2H6v-2Zm0 4h8v2H6v-2Z"/>
@@ -2643,6 +2839,7 @@ function buildOrderCard(order, { mode }) {
   card.querySelector("[data-order-due-date]")?.addEventListener("change", (event) => updateDueDate(order.id, event.target.value));
   card.querySelector("[data-edit]")?.addEventListener("click", () => editOrder(order.id));
   card.querySelector("[data-clone]")?.addEventListener("click", () => cloneOrder(order.id));
+  card.querySelector("[data-partial-delivery]")?.addEventListener("click", () => registerPartialDelivery(order.id));
   card.querySelector("[data-galvanoplasty-detail]")?.addEventListener("click", () => showGalvanoplastyDetail(order.id));
   card.querySelector("[data-galvanoplasty-send]")?.addEventListener("click", () => registerGalvanoplastyShipment(order.id));
   card.querySelector("[data-galvanoplasty-print]")?.addEventListener("click", () => printGalvanoplastyProtocol(order.id));
@@ -2685,6 +2882,7 @@ function showManagementOrderDetail(id) {
   if (!order) return;
   const displayStatus = normalizeStatus(order.status);
   const totalPieces = countPieces([order]);
+  const totals = deliveryTotals(order);
   elements.managementOrderDetail.hidden = false;
   elements.managementOrderDetail.innerHTML = `
     <div class="panel-title-row">
@@ -2706,6 +2904,8 @@ function showManagementOrderDetail(id) {
       <span><strong>Solicitante</strong>${order.requester}</span>
       <span><strong>Loja</strong>${order.origin}</span>
       <span><strong>Pe\u00e7as</strong>${totalPieces}</span>
+      <span><strong>Entregue</strong>${totals.delivered}</span>
+      <span><strong>Pendente</strong>${totals.pending}</span>
       <span><strong>Itens</strong>${order.items.length}</span>
     </div>
     <div class="table-wrap compact-table">
@@ -2716,15 +2916,19 @@ function showManagementOrderDetail(id) {
             <th>Modelo</th>
             <th>Tamanho</th>
             <th>Banho</th>
+            <th>Entregue</th>
+            <th>Pendente</th>
           </tr>
         </thead>
         <tbody>
-          ${order.items.map((item) => `
+          ${order.items.map((item, index) => `
             <tr>
               <td>${item.quantity}</td>
               <td>${item.model}</td>
               <td>${item.size}</td>
               <td>${item.bath}</td>
+              <td>${deliveredQuantityForItem(order, index)}</td>
+              <td>${Math.max(0, Number(item.quantity || 0) - deliveredQuantityForItem(order, index))}</td>
             </tr>
           `).join("")}
         </tbody>
@@ -2743,6 +2947,7 @@ function showCollaboratorOrderDetail(id) {
   if (!order) return;
   const displayStatus = normalizeStatus(order.status);
   const totalPieces = countPieces([order]);
+  const totals = deliveryTotals(order);
   elements.collaboratorOrderDetail.hidden = false;
   elements.collaboratorOrderDetail.innerHTML = `
     <div class="panel-title-row">
@@ -2763,6 +2968,8 @@ function showCollaboratorOrderDetail(id) {
       <span><strong>Loja</strong>${order.origin}</span>
       <span><strong>Prioridade</strong>${order.priority}</span>
       <span><strong>Pe\u00e7as</strong>${totalPieces}</span>
+      <span><strong>Entregue</strong>${totals.delivered}</span>
+      <span><strong>Pendente</strong>${totals.pending}</span>
       <span><strong>Itens</strong>${order.items.length}</span>
     </div>
     <div class="table-wrap compact-table">
@@ -2773,15 +2980,19 @@ function showCollaboratorOrderDetail(id) {
             <th>Modelo</th>
             <th>Tamanho</th>
             <th>Banho</th>
+            <th>Entregue</th>
+            <th>Pendente</th>
           </tr>
         </thead>
         <tbody>
-          ${order.items.map((item) => `
+          ${order.items.map((item, index) => `
             <tr>
               <td>${item.quantity}</td>
               <td>${item.model}</td>
               <td>${item.size}</td>
               <td>${item.bath}</td>
+              <td>${deliveredQuantityForItem(order, index)}</td>
+              <td>${Math.max(0, Number(item.quantity || 0) - deliveredQuantityForItem(order, index))}</td>
             </tr>
           `).join("")}
         </tbody>
@@ -3071,6 +3282,7 @@ function printCollaboratorOrder(id) {
   const order = getVisibleOrders().find((item) => item.id === id);
   if (!order) return;
   const totalPieces = countPieces([order]);
+  const totals = deliveryTotals(order);
   const html = `
     <!doctype html>
     <html>
@@ -3111,12 +3323,14 @@ function printCollaboratorOrder(id) {
           <span><strong>Loja</strong><br>${order.origin}</span>
           <span><strong>Solicitante</strong><br>${order.requester}</span>
           <span><strong>Pe\u00e7as</strong><br>${totalPieces}</span>
+          <span><strong>Entregue</strong><br>${totals.delivered}</span>
+          <span><strong>Pendente</strong><br>${totals.pending}</span>
           <span><strong>Itens</strong><br>${order.items.length}</span>
         </div>
         <table>
-          <thead><tr><th>Qtd.</th><th>Modelo</th><th>Tamanho</th><th>Banho</th></tr></thead>
+          <thead><tr><th>Qtd.</th><th>Modelo</th><th>Tamanho</th><th>Banho</th><th>Entregue</th><th>Pendente</th></tr></thead>
           <tbody>
-            ${order.items.map((item) => `<tr><td>${item.quantity}</td><td>${item.model}</td><td>${item.size}</td><td>${item.bath}</td></tr>`).join("")}
+            ${order.items.map((item, index) => `<tr><td>${item.quantity}</td><td>${item.model}</td><td>${item.size}</td><td>${item.bath}</td><td>${deliveredQuantityForItem(order, index)}</td><td>${Math.max(0, Number(item.quantity || 0) - deliveredQuantityForItem(order, index))}</td></tr>`).join("")}
           </tbody>
         </table>
         ${order.notes ? `<p><strong>Observa\u00e7\u00f5es:</strong> ${order.notes}</p>` : ""}
@@ -3145,6 +3359,7 @@ function statusHelperText(status) {
     "Em prepara\u00e7\u00e3o de banho (galvanoplastia)": "Em banho",
     "P\u00f3s banho": "Confer\u00eancia ap\u00f3s banho",
     "Prepara\u00e7\u00e3o final": "Prepara\u00e7\u00e3o para entrega",
+    "Entrega parcial": "Parte do pedido entregue",
     Entregue: "Pedido finalizado",
   };
   const currentStatus = normalizeStatus(status);
@@ -3206,6 +3421,7 @@ function buildStatusMessage(order) {
     "Em prepara\u00e7\u00e3o de banho (galvanoplastia)": `${base}\n\nStatus: Em prepara\u00e7\u00e3o de banho (galvanoplastia).\nSeu pedido foi direcionado para a etapa de banho. Avisaremos na pr\u00f3xima movimenta\u00e7\u00e3o.\n\nEquipe VERI.`,
     "P\u00f3s banho": `${base}\n\nStatus: P\u00f3s banho.\nSeu pedido retornou do banho e est\u00e1 em confer\u00eancia para a etapa final.\n\nEquipe VERI.`,
     "Prepara\u00e7\u00e3o final": `${base}\n\nStatus: Prepara\u00e7\u00e3o final.\nSeu pedido est\u00e1 sendo preparado para entrega.\n\nEquipe VERI.`,
+    "Entrega parcial": `${base}\n\nStatus: Entrega parcial.\nParte do pedido foi entregue. O saldo pendente continua ativo para acompanhamento e nova movimenta\u00e7\u00e3o.\n\nEquipe VERI.`,
     Entregue: `${base}\n\nStatus: Entregue.\nSeu pedido foi finalizado e entregue. Obrigado por utilizar o sistema VERI.`,
   };
 
@@ -3581,6 +3797,7 @@ function normalizeOrders(orderList) {
           bath: normalizeBath(repairText(item.bath)),
         }))
       : [],
+    deliveries: normalizeDeliveries(order.deliveries),
   }));
 }
 
@@ -3635,6 +3852,7 @@ function normalizeStatus(status) {
   }
   if (key === "pos banho" || key === "pos-banho") return "P\u00f3s banho";
   if (key === "preparacao final") return "Prepara\u00e7\u00e3o final";
+  if (key === "entrega parcial" || key === "parcialmente entregue") return "Entrega parcial";
   return "Em separa\u00e7\u00e3o";
 }
 

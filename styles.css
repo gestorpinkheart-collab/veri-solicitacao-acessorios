@@ -1065,6 +1065,11 @@ select:disabled {
   border-color: rgba(127, 111, 150, 0.38);
 }
 
+.status-widget.partial {
+  background: linear-gradient(145deg, rgba(179, 137, 75, 0.2), #ffffff 72%);
+  border-color: rgba(179, 137, 75, 0.42);
+}
+
 .status-widget.delivered {
   background: linear-gradient(145deg, rgba(146, 172, 160, 0.12), #ffffff 72%);
 }
@@ -1083,6 +1088,10 @@ select:disabled {
 
 .status-widget.final-prep::after {
   background: #7f6f96;
+}
+
+.status-widget.partial::after {
+  background: #b3894b;
 }
 
 .status-widget.delivered::after {
@@ -1625,6 +1634,11 @@ select:disabled {
   color: #4f4166;
 }
 
+.order-partial .status-pill {
+  background: rgba(179, 137, 75, 0.2);
+  color: #6d4d1e;
+}
+
 .order-delivered .status-pill {
   background: rgba(142, 163, 155, 0.18);
   color: #51665d;
@@ -1643,6 +1657,88 @@ select:disabled {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.delivery-inline {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.delivery-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(20, 37, 31, 0.42);
+  backdrop-filter: blur(6px);
+}
+
+.delivery-dialog {
+  width: min(760px, 100%);
+  max-height: min(86vh, 760px);
+  overflow: auto;
+  border: 1px solid rgba(146, 172, 160, 0.44);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 26px 70px rgba(20, 37, 31, 0.28);
+  padding: 22px;
+}
+
+.delivery-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 14px 0;
+}
+
+.delivery-summary span {
+  border-radius: 10px;
+  background: var(--surface-muted);
+  padding: 10px 12px;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.delivery-summary strong {
+  display: block;
+  color: var(--accent-dark);
+  font-size: 1.35rem;
+}
+
+.delivery-list {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.delivery-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 120px;
+  gap: 12px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(247, 250, 248, 0.74);
+  padding: 10px;
+}
+
+.delivery-row.done {
+  opacity: 0.62;
+}
+
+.delivery-row span {
+  display: grid;
+  gap: 3px;
+  color: var(--text);
+  font-weight: 800;
+}
+
+.delivery-row small {
+  color: var(--muted);
+  font-weight: 700;
 }
 
 .empty {

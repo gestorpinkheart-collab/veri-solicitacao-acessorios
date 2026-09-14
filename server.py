@@ -1386,11 +1386,11 @@ def create_order_supabase(order):
                 return db_to_order(rows[0])
         except HTTPError as exc:
             error_body = exc.read().decode("utf-8", errors="replace")
-            if exc.code == 400 and "history" in error_body:
+            if exc.code == 400 and ("history" in error_body or "deliveries" in error_body):
                 rows = supabase_request(
                     f"/rest/v1/{SUPABASE_TABLE}",
                     method="POST",
-                    body=order_to_db(order, include_history=False),
+                    body=order_to_db(order, include_history="history" not in error_body, include_deliveries="deliveries" not in error_body),
                     extra_headers={"Prefer": "return=representation"},
                 )
                 if rows:
@@ -1412,10 +1412,11 @@ def upsert_order_supabase(order):
     except HTTPError as exc:
         if exc.code != 400:
             raise
+        error_body = exc.read().decode("utf-8", errors="replace")
         rows = supabase_request(
             f"/rest/v1/{SUPABASE_TABLE}?on_conflict=id",
             method="POST",
-            body=order_to_db(order, include_history=False),
+            body=order_to_db(order, include_history="history" not in error_body, include_deliveries="deliveries" not in error_body),
             extra_headers={"Prefer": "return=representation,resolution=merge-duplicates"},
         )
     return db_to_order(rows[0]) if rows else order
@@ -1438,10 +1439,11 @@ def update_order_supabase(order_id, updates, actor="", actor_role=""):
     except HTTPError as exc:
         if exc.code != 400:
             raise
+        error_body = exc.read().decode("utf-8", errors="replace")
         rows = supabase_request(
             f"/rest/v1/{SUPABASE_TABLE}?id=eq.{quote(order_id, safe='')}",
             method="PATCH",
-            body=updates_to_db(updates, include_history=False),
+            body=updates_to_db(updates, include_history="history" not in error_body, include_deliveries="deliveries" not in error_body),
             extra_headers={"Prefer": "return=representation"},
         )
     return db_to_order(rows[0]) if rows else None
@@ -1579,6 +1581,7 @@ def normalize_order(order):
         "notes": str(order.get("notes", "") or "").strip(),
         "items": order.get("items") if isinstance(order.get("items"), list) else [],
         "history": order.get("history") if isinstance(order.get("history"), list) else [],
+        "deliveries": order.get("deliveries") if isinstance(order.get("deliveries"), list) else [],
         "updatedBy": str(order.get("updatedBy", "") or "").strip(),
         "updatedByRole": str(order.get("updatedByRole", "") or "").strip(),
     }
@@ -1736,6 +1739,8 @@ def append_history(order, action, actor="", actor_role="", details=None):
 def history_action(updates):
     if "status" in updates:
         return f"Status alterado para {updates.get('status')}"
+    if "deliveries" in updates:
+        return "Entrega do pedido registrada"
     if "galvanoplasty" in updates:
         return "Envio para Galvanoplastia registrado"
     if "dueDate" in updates:
@@ -1749,7 +1754,7 @@ def allowed_order_updates(updates):
     if not isinstance(updates, dict):
         return {}
     allowed = {}
-    for key in ("requestDate", "dueDate", "requester", "phone", "origin", "priority", "status", "notes", "items", "history", "galvanoplasty"):
+    for key in ("requestDate", "dueDate", "requester", "phone", "origin", "priority", "status", "notes", "items", "history", "galvanoplasty", "deliveries"):
         if key in updates:
             allowed[key] = updates[key]
     if "phone" in allowed:
@@ -1757,7 +1762,7 @@ def allowed_order_updates(updates):
     return allowed
 
 
-def updates_to_db(updates, include_history=True):
+def updates_to_db(updates, include_history=True, include_deliveries=True):
     db_updates = {}
     allowed = allowed_order_updates(updates)
     field_map = {
@@ -1772,15 +1777,18 @@ def updates_to_db(updates, include_history=True):
         "items": "items",
         "history": "history",
         "galvanoplasty": "galvanoplasty",
+        "deliveries": "deliveries",
     }
     for key, value in allowed.items():
         if key == "history" and not include_history:
+            continue
+        if key == "deliveries" and not include_deliveries:
             continue
         db_updates[field_map[key]] = None if key == "dueDate" and not value else value
     return db_updates
 
 
-def order_to_db(order, include_history=True):
+def order_to_db(order, include_history=True, include_deliveries=True):
     data = {
         "id": order.get("id", ""),
         "request_date": order.get("requestDate", ""),
@@ -1794,6 +1802,8 @@ def order_to_db(order, include_history=True):
         "items": order.get("items", []),
         "galvanoplasty": order.get("galvanoplasty") or {},
     }
+    if include_deliveries:
+        data["deliveries"] = order.get("deliveries") if isinstance(order.get("deliveries"), list) else []
     if include_history:
         data["history"] = order.get("history", [])
     return data
@@ -1813,6 +1823,7 @@ def db_to_order(row):
         "items": row.get("items") or [],
         "history": row.get("history") or [],
         "galvanoplasty": row.get("galvanoplasty") or {},
+        "deliveries": row.get("deliveries") or [],
     }
 
 
