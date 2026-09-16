@@ -53,6 +53,7 @@ const partSizes = {
 };
 
 const baths = ["Ouro", "R\u00f3dio"];
+const DEFAULT_LEAD_TIME_BUSINESS_DAYS = 30;
 
 const sampleOrders = [
   {
@@ -1019,7 +1020,12 @@ async function patchOrder(id, updates) {
       body: JSON.stringify(updates),
     });
     apiAvailable = response.ok;
-    if (response.ok) return await response.json();
+    if (response.ok) {
+      const savedOrder = await response.json();
+      orders = orders.map((order) => (order.id === id ? savedOrder : order));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(orders));
+      return savedOrder;
+    }
     throw new Error(await apiErrorMessage(response));
   } catch (error) {
     apiAvailable = false;
@@ -1395,13 +1401,14 @@ async function handleSubmit(event) {
     const requester = isInternalUser() ? elements.requester.value.trim() : currentSession.name;
     const existingOrder = existingId ? orders.find((item) => item.id === existingId) : null;
     const pricedItems = enrichItemsForOrder(items, existingOrder);
+    const requestDate = existingOrder?.requestDate || todayIso;
     const order = {
-      requestDate: existingOrder?.requestDate || todayIso,
+      requestDate,
       requester,
       phone: currentSession.role === "collaborator" ? currentSession.phone : existingOrder?.phone || "",
       origin: elements.origin.value,
       priority: elements.priority.value,
-      dueDate: existingOrder?.dueDate || "",
+      dueDate: existingOrder?.dueDate || defaultDueDate(requestDate),
       status: isInternalUser() ? elements.status.value : statuses[0],
       notes: elements.notes.value.trim(),
       items: pricedItems,
@@ -1749,6 +1756,25 @@ async function updateStatus(id, status) {
   const order = orders.find((item) => item.id === id);
   if (!order) return;
   const normalizedStatus = normalizeStatus(status);
+  if (normalizeStatus(order.status) === "Entregue" && !isMasterUser()) {
+    alert("Este pedido já foi entregue. Somente o Master pode reativar pedidos finalizados.");
+    render();
+    return;
+  }
+  let reopenReason = "";
+  if (normalizeStatus(order.status) === "Entregue" && normalizedStatus !== "Entregue" && isMasterUser()) {
+    const reason = prompt("Informe o motivo da reativação deste pedido:", "");
+    if (reason === null) {
+      render();
+      return;
+    }
+    reopenReason = reason.trim();
+    if (!reopenReason) {
+      alert("Informe o motivo da reativação para manter a rastreabilidade do pedido.");
+      render();
+      return;
+    }
+  }
   const totals = deliveryTotals(order);
   if (normalizedStatus === "Entregue" && totals.total > 0 && totals.pending > 0) {
     alert("Ainda existe saldo pendente neste pedido. Registre a entrega parcial ou complete as quantidades antes de marcar como Entregue.");
@@ -1761,7 +1787,9 @@ async function updateStatus(id, status) {
     return;
   }
   try {
-    await patchOrder(id, { status: normalizedStatus, updatedBy: currentSession.name, updatedByRole: currentSession.role });
+    const updates = { status: normalizedStatus, updatedBy: currentSession.name, updatedByRole: currentSession.role };
+    if (reopenReason) updates.reopenReason = reopenReason;
+    await patchOrder(id, updates);
   } catch (error) {
     alert(`N\u00e3o foi poss\u00edvel alterar o status no banco.\n\n${error.message}`);
   }
@@ -1770,6 +1798,12 @@ async function updateStatus(id, status) {
 
 async function updateDueDate(id, dueDate) {
   if (!isInternalUser()) return;
+  const order = orders.find((item) => item.id === id);
+  if (order && normalizeStatus(order.status) === "Entregue" && !isMasterUser()) {
+    alert("Este pedido já foi entregue. Somente o Master pode reativar pedidos finalizados.");
+    render();
+    return;
+  }
   try {
     await patchOrder(id, { dueDate, updatedBy: currentSession.name, updatedByRole: currentSession.role });
   } catch (error) {
@@ -1782,6 +1816,10 @@ function registerPartialDelivery(id) {
   if (!isInternalUser()) return;
   const order = orders.find((item) => item.id === id);
   if (!order) return;
+  if (normalizeStatus(order.status) === "Entregue" && !isMasterUser()) {
+    alert("Este pedido já foi entregue. Somente o Master pode reativar pedidos finalizados.");
+    return;
+  }
 
   const totals = deliveryTotals(order);
   if (totals.total > 0 && totals.pending === 0) {
@@ -2714,19 +2752,24 @@ function renderCollaboratorOrders() {
 function buildOrderCard(order, { mode }) {
   const card = document.createElement("article");
   const displayStatus = normalizeStatus(order.status);
+  const isDelivered = displayStatus === "Entregue";
+  const overdueDays = overdueBusinessDays({ ...order, status: displayStatus });
+  const canChangeDelivered = !isDelivered || isMasterUser();
   const isExpanded = expandedOrderIds.has(order.id);
   const totalPieces = countPieces([order]);
   const deliveryTotalsInfo = deliveryTotals(order);
   const priorityClass = order.priority === "Urgente" ? "urgent" : "";
-  const canEdit = canManageOrder(order);
+  const isManagement = mode === "management";
+  const canEdit = canManageOrder(order) && !isDelivered;
+  const canOperate = isManagement && !isDelivered;
+  const canSendWhatsapp = isManagement && !isDelivered && Boolean(order.phone);
   const items = Array.isArray(order.items) ? order.items : [];
   const summaryItems = items.slice(0, 4);
   const hiddenItems = Math.max(0, items.length - summaryItems.length);
-  const isManagement = mode === "management";
   const galvanoplasty = order.galvanoplasty || {};
   const galvanoplastySent = Boolean(galvanoplasty.sentAt);
 
-  card.className = `order-card compact-order-card ${statusClass(displayStatus)} ${isExpanded ? "expanded-order" : ""}`;
+  card.className = `order-card compact-order-card ${statusClass(displayStatus)} ${overdueDays ? "order-late" : ""} ${isExpanded ? "expanded-order" : ""} ${isDelivered && !isMasterUser() ? "locked-order" : ""}`;
   card.innerHTML = `
     <div class="order-line">
       <button class="expand-button" type="button" data-toggle-order="${order.id}" title="${isExpanded ? "Recolher pedido" : "Expandir pedido"}" aria-label="${isExpanded ? "Recolher pedido" : "Expandir pedido"}" aria-expanded="${isExpanded}">
@@ -2742,11 +2785,12 @@ function buildOrderCard(order, { mode }) {
         <span><strong>${deliveryTotalsInfo.pending}</strong> pendentes</span>
         <span><strong>${formatDate(order.requestDate)}</strong> abertura</span>
         <span><strong>${formatDate(order.dueDate) || "Sem previs\u00e3o"}</strong> previs\u00e3o</span>
-        <span><strong>${leadTimeText(order)}</strong> lead time</span>
+        <span class="${overdueDays ? "overdue-kpi" : ""}"><strong>${leadTimeText(order)}</strong> lead time</span>
       </div>
       <div class="order-tags">
         <span class="pill ${priorityClass}">${order.priority}</span>
         <span class="pill status-pill">${displayStatus}</span>
+        ${overdueDays && isManagement ? `<span class="pill overdue-status-pill">${overdueDays} dia${overdueDays === 1 ? "" : "s"} úteis em atraso</span>` : ""}
       </div>
     </div>
     <div class="order-compact-meta">
@@ -2780,13 +2824,13 @@ function buildOrderCard(order, { mode }) {
       ${isManagement ? `
         <label class="compact-control">
           Status
-          <select data-order-status="${order.id}">
+          <select data-order-status="${order.id}" ${canChangeDelivered ? "" : "disabled"} title="${canChangeDelivered ? "Alterar status" : "Pedido entregue. Somente Master pode reativar."}">
             ${statuses.map((status) => `<option ${status === displayStatus ? "selected" : ""}>${status}</option>`).join("")}
           </select>
         </label>
         <label class="compact-control">
           Previs\u00e3o
-          <input data-order-due-date="${order.id}" type="date" value="${order.dueDate || ""}">
+          <input data-order-due-date="${order.id}" type="date" value="${order.dueDate || ""}" ${canChangeDelivered ? "" : "disabled"} title="${canChangeDelivered ? "Alterar previsão" : "Pedido entregue. Somente Master pode reativar."}">
         </label>
       ` : `<span class="status-note">${statusHelperText(displayStatus)}</span>`}
       <div class="order-actions" aria-label="A\u00e7\u00f5es do pedido">
@@ -2800,17 +2844,17 @@ function buildOrderCard(order, { mode }) {
             <path d="M8 7V4c0-1.1.9-2 2-2h8c1.1 0 2 .9 2 2v10c0 1.1-.9 2-2 2h-3v3c0 1.1-.9 2-2 2H5c-1.1 0-2-.9-2-2V9c0-1.1.9-2 2-2h3Zm2 0h3c1.1 0 2 .9 2 2v5h3V4h-8v3ZM5 9v10h8V9H5Z"/>
           </svg>
         </button>` : ""}
-        ${isManagement && order.phone ? `<a class="action-button whatsapp-action" href="${whatsappUrl(order)}" target="_blank" rel="noopener noreferrer" title="WhatsApp" aria-label="Enviar WhatsApp">
+        ${canSendWhatsapp ? `<a class="action-button whatsapp-action" href="${whatsappUrl(order)}" target="_blank" rel="noopener noreferrer" title="WhatsApp" aria-label="Enviar WhatsApp">
           <svg viewBox="0 0 24 24" focusable="false">
             <path d="M12.1 3a8.9 8.9 0 0 0-7.6 13.5L3.4 21l4.6-1.1A8.9 8.9 0 1 0 12.1 3Zm0 2a6.9 6.9 0 1 1-3.5 12.8l-.4-.2-2.1.5.5-2-.3-.4A6.9 6.9 0 0 1 12.1 5Zm-3 3.6c-.2 0-.5.1-.7.3-.2.2-.8.8-.8 1.9s.8 2.2.9 2.4c.1.1 1.6 2.6 4 3.5 2 .8 2.4.6 2.8.6.4 0 1.4-.6 1.6-1.1.2-.6.2-1 .1-1.1-.1-.1-.2-.2-.5-.3l-1.6-.8c-.2-.1-.4-.1-.6.2l-.7.9c-.1.2-.3.2-.5.1-.3-.1-1.1-.4-2-1.2-.7-.7-1.2-1.5-1.4-1.7-.1-.2 0-.4.1-.5l.4-.5c.1-.2.2-.3.3-.5.1-.2.1-.4 0-.5l-.7-1.7c-.2-.4-.4-.4-.7-.4Z"/>
           </svg>
         </a>` : ""}
-        ${isManagement ? `<button class="action-button delivery-action" type="button" data-partial-delivery="${order.id}" title="Registrar entrega parcial ou final" aria-label="Registrar entrega parcial ou final">
+        ${canOperate ? `<button class="action-button delivery-action" type="button" data-partial-delivery="${order.id}" title="Registrar entrega parcial ou final" aria-label="Registrar entrega parcial ou final">
           <svg viewBox="0 0 24 24" focusable="false">
             <path d="M3 4h12v10H3V4Zm14 4h2.5l1.5 2.5V14h-4V8ZM6.5 20a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5Zm11 0a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5ZM5 6v6h8V6H5Z"/>
           </svg>
         </button>` : ""}
-        ${isManagement ? `<button class="action-button galvanoplasty-action" type="button" data-galvanoplasty-send="${order.id}" title="Registrar envio para Galvanoplastia" aria-label="Registrar envio para Galvanoplastia">
+        ${canOperate ? `<button class="action-button galvanoplasty-action" type="button" data-galvanoplasty-send="${order.id}" title="Registrar envio para Galvanoplastia" aria-label="Registrar envio para Galvanoplastia">
           <svg viewBox="0 0 24 24" focusable="false">
             <path d="M4 4h10l6 6v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm9 1.5V11h5.5L13 5.5ZM6 13h10v2H6v-2Zm0 4h8v2H6v-2Z"/>
           </svg>
@@ -3113,6 +3157,10 @@ async function registerGalvanoplastyShipment(id) {
   if (!isInternalUser()) return;
   const order = orders.find((item) => item.id === id);
   if (!order) return;
+  if (normalizeStatus(order.status) === "Entregue" && !isMasterUser()) {
+    alert("Este pedido já foi entregue. Somente o Master pode reativar pedidos finalizados.");
+    return;
+  }
 
   const receivedBy = prompt("Nome de quem recebeu as pe\u00e7as na Galvanoplastia:", order.galvanoplasty?.receivedBy || "");
   if (receivedBy === null) return;
@@ -3386,6 +3434,7 @@ function cloneOrder(id) {
 }
 
 function canManageOrder(order) {
+  if (normalizeStatus(order.status) === "Entregue" && !isMasterUser()) return false;
   if (isInternalUser()) return true;
   return (
     normalizeText(order.requester) === normalizeText(currentSession?.name || "") &&
@@ -3700,6 +3749,54 @@ function toIsoDate(date) {
   return date.toISOString().slice(0, 10);
 }
 
+function parseIsoDate(value) {
+  const text = String(value || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return null;
+  const date = new Date(`${text}T00:00:00Z`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function isBusinessDay(date) {
+  const day = date.getUTCDay();
+  return day !== 0 && day !== 6;
+}
+
+function addBusinessDays(value, days) {
+  const date = parseIsoDate(value) || parseIsoDate(todayIso) || new Date();
+  let added = 0;
+  while (added < days) {
+    date.setUTCDate(date.getUTCDate() + 1);
+    if (isBusinessDay(date)) added += 1;
+  }
+  return toIsoDate(date);
+}
+
+function businessDaysBetween(startValue, endValue) {
+  const start = parseIsoDate(startValue);
+  const end = parseIsoDate(endValue);
+  if (!start || !end || end <= start) return 0;
+  const current = new Date(start);
+  let days = 0;
+  while (current < end) {
+    current.setUTCDate(current.getUTCDate() + 1);
+    if (current <= end && isBusinessDay(current)) days += 1;
+  }
+  return days;
+}
+
+function defaultDueDate(requestDate) {
+  return addBusinessDays(requestDate || todayIso, DEFAULT_LEAD_TIME_BUSINESS_DAYS);
+}
+
+function overdueBusinessDays(order) {
+  if (normalizeStatus(order?.status) === "Entregue") return 0;
+  const dueDate = order?.dueDate || defaultDueDate(order?.requestDate || todayIso);
+  const todayDate = parseIsoDate(todayIso);
+  const due = parseIsoDate(dueDate);
+  if (!todayDate || !due || todayDate <= due) return 0;
+  return businessDaysBetween(dueDate, todayIso);
+}
+
 function formatDate(value) {
   if (!value) return "";
   return new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`));
@@ -3732,12 +3829,13 @@ function formatDateTime(value) {
 }
 
 function leadTimeText(order) {
-  if (!order?.requestDate || !order?.dueDate) return "-";
-  const start = new Date(`${order.requestDate}T00:00:00Z`);
-  const end = new Date(`${order.dueDate}T00:00:00Z`);
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return "-";
-  const days = Math.max(0, Math.round((end - start) / 86400000));
-  return `${days} dia${days === 1 ? "" : "s"}`;
+  const requestDate = order?.requestDate || todayIso;
+  const dueDate = order?.dueDate || defaultDueDate(requestDate);
+  const days = businessDaysBetween(requestDate, dueDate) || DEFAULT_LEAD_TIME_BUSINESS_DAYS;
+  const overdue = overdueBusinessDays({ ...order, requestDate, dueDate });
+  const base = `${days} dia${days === 1 ? "" : "s"} úteis`;
+  if (!overdue) return base;
+  return `${base} · ${overdue} dia${overdue === 1 ? "" : "s"} úteis em atraso`;
 }
 
 function formatMoney(value) {
@@ -3779,26 +3877,29 @@ function roleLabel(role) {
 }
 
 function normalizeOrders(orderList) {
-  return orderList.map((order) => ({
-    ...order,
-    requester: repairText(order.requester),
-    phone: normalizePhone(order.phone || ""),
-    origin: repairText(order.origin),
-    priority: repairText(order.priority) || "Normal",
-    status: normalizeStatus(repairText(order.status)),
-    notes: repairText(order.notes),
-    requestDate: order.requestDate || todayIso,
-    dueDate: order.dueDate || "",
-    items: Array.isArray(order.items)
-      ? order.items.map((item) => ({
-          ...item,
-          model: repairText(item.model),
-          size: repairText(item.size),
-          bath: normalizeBath(repairText(item.bath)),
-        }))
-      : [],
-    deliveries: normalizeDeliveries(order.deliveries),
-  }));
+  return orderList.map((order) => {
+    const requestDate = order.requestDate || todayIso;
+    return {
+      ...order,
+      requester: repairText(order.requester),
+      phone: normalizePhone(order.phone || ""),
+      origin: repairText(order.origin),
+      priority: repairText(order.priority) || "Normal",
+      status: normalizeStatus(repairText(order.status)),
+      notes: repairText(order.notes),
+      requestDate,
+      dueDate: order.dueDate || defaultDueDate(requestDate),
+      items: Array.isArray(order.items)
+        ? order.items.map((item) => ({
+            ...item,
+            model: repairText(item.model),
+            size: repairText(item.size),
+            bath: normalizeBath(repairText(item.bath)),
+          }))
+        : [],
+      deliveries: normalizeDeliveries(order.deliveries),
+    };
+  });
 }
 
 function repairText(value) {

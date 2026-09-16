@@ -1327,6 +1327,21 @@ select:disabled {
   opacity: 0.82;
 }
 
+.order-card.order-late {
+  border-left-color: var(--danger);
+  background: linear-gradient(90deg, rgba(162, 59, 59, 0.1), #fff 18%);
+}
+
+.order-card.locked-order {
+  opacity: 0.74;
+}
+
+.order-card.locked-order .action-button:not(.print-action),
+.order-card.locked-order select,
+.order-card.locked-order input[type="date"] {
+  filter: grayscale(0.15);
+}
+
 .collaborator-orders-panel {
   margin-top: 18px;
   padding: 18px;
@@ -1608,6 +1623,15 @@ select:disabled {
 .status-pill {
   background: var(--accent-soft);
   color: var(--accent-dark);
+}
+
+.overdue-kpi strong {
+  color: var(--danger);
+}
+
+.overdue-status-pill {
+  background: rgba(162, 59, 59, 0.12);
+  color: var(--danger);
 }
 
 .order-received .status-pill {

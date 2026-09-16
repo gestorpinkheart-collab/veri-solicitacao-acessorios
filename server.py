@@ -1568,11 +1568,25 @@ def write_access_log(access):
             pass
 
 
+def default_due_date(request_date):
+    try:
+        current = datetime.strptime(str(request_date or ""), "%Y-%m-%d").date()
+    except ValueError:
+        current = datetime.now().date()
+    added = 0
+    while added < 30:
+        current += timedelta(days=1)
+        if current.weekday() < 5:
+            added += 1
+    return current.isoformat()
+
+
 def normalize_order(order):
+    request_date = str(order.get("requestDate", "")).strip() or datetime.now().date().isoformat()
     return {
         "id": str(order.get("id", "")).strip(),
-        "requestDate": str(order.get("requestDate", "")).strip() or datetime.now().date().isoformat(),
-        "dueDate": str(order.get("dueDate", "") or "").strip(),
+        "requestDate": request_date,
+        "dueDate": str(order.get("dueDate", "") or "").strip() or default_due_date(request_date),
         "requester": str(order.get("requester", "")).strip(),
         "phone": only_digits(order.get("phone", "")),
         "origin": str(order.get("origin", "")).strip(),
@@ -1738,6 +1752,9 @@ def append_history(order, action, actor="", actor_role="", details=None):
 
 def history_action(updates):
     if "status" in updates:
+        reason = str(updates.get("reopenReason", "") or "").strip()
+        if reason:
+            return f"Status alterado para {updates.get('status')} - motivo da reativacao: {reason}"
         return f"Status alterado para {updates.get('status')}"
     if "deliveries" in updates:
         return "Entrega do pedido registrada"
@@ -1810,10 +1827,11 @@ def order_to_db(order, include_history=True, include_deliveries=True):
 
 
 def db_to_order(row):
+    request_date = row.get("request_date", "")
     return {
         "id": row.get("id", ""),
-        "requestDate": row.get("request_date", ""),
-        "dueDate": row.get("due_date", ""),
+        "requestDate": request_date,
+        "dueDate": row.get("due_date", "") or default_due_date(request_date),
         "requester": row.get("requester", ""),
         "phone": row.get("phone", ""),
         "origin": row.get("origin", ""),
