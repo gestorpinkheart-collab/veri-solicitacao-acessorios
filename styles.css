@@ -1634,6 +1634,12 @@ select:disabled {
   color: var(--danger);
 }
 
+.reactivate-status-pill {
+  background: rgba(146, 172, 160, 0.2);
+  color: var(--accent-dark);
+  border: 1px solid rgba(47, 71, 61, 0.16);
+}
+
 .order-received .status-pill {
   background: rgba(146, 172, 160, 0.22);
 }

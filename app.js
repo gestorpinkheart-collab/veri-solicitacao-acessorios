@@ -2754,6 +2754,7 @@ function buildOrderCard(order, { mode }) {
   const displayStatus = normalizeStatus(order.status);
   const isDelivered = displayStatus === "Entregue";
   const overdueDays = overdueBusinessDays({ ...order, status: displayStatus });
+  const canReactivateDelivered = isDelivered && isMasterUser();
   const canChangeDelivered = !isDelivered || isMasterUser();
   const isExpanded = expandedOrderIds.has(order.id);
   const totalPieces = countPieces([order]);
@@ -2790,6 +2791,7 @@ function buildOrderCard(order, { mode }) {
       <div class="order-tags">
         <span class="pill ${priorityClass}">${order.priority}</span>
         <span class="pill status-pill">${displayStatus}</span>
+        ${canReactivateDelivered && isManagement ? `<span class="pill reactivate-status-pill">Master: altere o status para reativar</span>` : ""}
         ${overdueDays && isManagement ? `<span class="pill overdue-status-pill">${overdueDays} dia${overdueDays === 1 ? "" : "s"} úteis em atraso</span>` : ""}
       </div>
     </div>
@@ -2824,7 +2826,7 @@ function buildOrderCard(order, { mode }) {
       ${isManagement ? `
         <label class="compact-control">
           Status
-          <select data-order-status="${order.id}" ${canChangeDelivered ? "" : "disabled"} title="${canChangeDelivered ? "Alterar status" : "Pedido entregue. Somente Master pode reativar."}">
+          <select data-order-status="${order.id}" ${canChangeDelivered ? "" : "disabled"} title="${canReactivateDelivered ? "Para reativar, altere o status e informe o motivo." : canChangeDelivered ? "Alterar status" : "Pedido entregue. Somente Master pode reativar."}">
             ${statuses.map((status) => `<option ${status === displayStatus ? "selected" : ""}>${status}</option>`).join("")}
           </select>
         </label>
