@@ -222,6 +222,8 @@ class RequestHandler(SimpleHTTPRequestHandler):
 
             try:
                 self.send_json(create_password_reset_request(payload), status=201)
+            except ValueError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=400)
             except StorageError as exc:
                 self.send_json({"ok": False, "error": str(exc)}, status=503)
             return
@@ -713,17 +715,11 @@ def change_user_password(payload):
     return public_user(updated)
 
 def create_password_reset_request(payload):
-    generic_message = "Se existir uma conta vinculada a esse usuário, a solicitação será registrada para análise do administrador."
     login = str(payload.get("login", "") if isinstance(payload, dict) else "").strip()
+    phone = only_digits(payload.get("phone", "") if isinstance(payload, dict) else "")
     request_code = generate_reset_code()
-    response = {
-        "ok": True,
-        "message": generic_message,
-        "requestCode": request_code,
-        "whatsappUrl": admin_whatsapp_reset_url(login),
-    }
     if not login:
-        return response
+        raise ValueError("Informe o usuário/login.")
 
     user = find_user(login)
     if not user:
@@ -734,45 +730,81 @@ def create_password_reset_request(payload):
             "eventType": "reset_senha_solicitado",
             "details": {"knownUser": False},
         })
-        return response
+        raise ValueError("Usuário ou celular cadastrado não conferem.")
+
+    is_collaborator = user.get("role") == "collaborator"
+    registered_phone = only_digits(user.get("phone", ""))
+    if is_collaborator and (not phone or not registered_phone or phone != registered_phone):
+        raise ValueError("Usuário ou celular cadastrado não conferem. Verifique os dados ou procure o Master para atualizar o cadastro.")
 
     now = datetime.now()
+    auto_approved = is_collaborator
+    expire_open_password_reset_requests(user.get("login", ""))
     request = {
         "id": token_hex(8),
         "login": user.get("login", ""),
         "userName": user.get("name", ""),
         "role": user.get("role", ""),
-        "status": "PENDENTE",
+        "status": "APROVADO" if auto_approved else "PENDENTE",
         "codeHash": hash_reset_code(request_code),
         "createdAt": now.isoformat(timespec="seconds"),
-        "approvedAt": "",
-        "approvedBy": "",
-        "expiresAt": "",
+        "approvedAt": now.isoformat(timespec="seconds") if auto_approved else "",
+        "approvedBy": "validacao_celular" if auto_approved else "",
+        "expiresAt": (now + timedelta(minutes=30)).isoformat(timespec="seconds") if auto_approved else "",
         "usedAt": "",
-        "decidedAt": "",
-        "decidedBy": "",
+        "decidedAt": now.isoformat(timespec="seconds") if auto_approved else "",
+        "decidedBy": "validacao_celular" if auto_approved else "",
     }
     save_password_reset_request(request)
     write_access_log({
         "userName": user.get("name", login),
         "login": user.get("login", login),
         "role": user.get("role", ""),
-        "eventType": "reset_senha_solicitado",
-        "details": {"requestId": request["id"], "knownUser": True},
+        "eventType": "reset_senha_aprovado" if auto_approved else "reset_senha_solicitado",
+        "details": {"requestId": request["id"], "knownUser": True, "automatic": auto_approved},
     })
-    return response
+    return {
+        "ok": True,
+        "message": (
+            "Celular confirmado. Você já pode criar sua nova senha."
+            if auto_approved
+            else "Solicitação registrada. Aguarde a aprovação do Master."
+        ),
+        "requestCode": request_code,
+        "autoApproved": auto_approved,
+        "whatsappUrl": "" if auto_approved else admin_whatsapp_reset_url(login),
+    }
 
 
 def list_password_reset_requests_for_master(payload):
     authenticate_master(payload)
-    return [public_password_reset_request(request) for request in read_password_reset_requests()]
+    requests = read_password_reset_requests()
+    seen_pending_logins = set()
+    visible_requests = []
+    expired_at = datetime.now().isoformat(timespec="seconds")
+
+    for request in requests:
+        if request.get("status") == "PENDENTE":
+            login_key = normalize(request.get("login"))
+            if login_key in seen_pending_logins:
+                save_password_reset_request({
+                    **request,
+                    "status": "EXPIRADO",
+                    "decidedAt": expired_at,
+                    "decidedBy": "solicitacao_duplicada",
+                })
+                continue
+            seen_pending_logins.add(login_key)
+        visible_requests.append(request)
+
+    return [public_password_reset_request(request) for request in visible_requests]
 
 
 def decide_password_reset_request(payload):
     if not isinstance(payload, dict):
         raise ValueError("Dados invalidos.")
     master_user = authenticate_master(payload)
-    request_id = str(payload.get("id", "")).strip()
+    request_id = str(payload.get("id") or payload.get("requestId") or "").strip()
     decision = str(payload.get("decision", "")).strip().upper()
     if decision not in ("APROVADO", "RECUSADO"):
         raise ValueError("Decisao invalida.")
@@ -1159,6 +1191,17 @@ def save_password_reset_request(request):
 
 def find_password_reset_request(request_id):
     return next((request for request in read_password_reset_requests() if request.get("id") == request_id), None)
+
+
+def expire_open_password_reset_requests(login):
+    normalized_login = normalize(login)
+    now = datetime.now().isoformat(timespec="seconds")
+    for request in read_password_reset_requests():
+        if normalize(request.get("login")) != normalized_login:
+            continue
+        if request.get("status") not in ("PENDENTE", "APROVADO") or request.get("usedAt"):
+            continue
+        save_password_reset_request({**request, "status": "EXPIRADO", "decidedAt": now, "decidedBy": "nova_solicitacao"})
 
 
 def find_approved_password_reset_request(login, request_code):

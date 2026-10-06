@@ -110,10 +110,14 @@
           </div>
         </form>
         <form id="resetRequestForm" class="login-form reset-form" hidden>
-          <p class="subtle-text">Informe seu usu&aacute;rio. A solicita&ccedil;&atilde;o ser&aacute; registrada e o WhatsApp ser&aacute; aberto para aviso ao administrador.</p>
+          <p class="subtle-text">Informe seu usu&aacute;rio e o celular cadastrado. Para colaboradores, a libera&ccedil;&atilde;o &eacute; imediata.</p>
           <label>
             Usu&aacute;rio/Login
             <input id="resetRequestLogin" type="text" placeholder="Digite seu usu&aacute;rio" autocomplete="off">
+          </label>
+          <label>
+            Celular cadastrado (colaborador)
+            <input id="resetRequestPhone" type="tel" inputmode="numeric" placeholder="(11) 99999-9999" autocomplete="tel">
           </label>
           <p class="login-error" id="resetRequestError" role="alert"></p>
           <div class="login-actions">
@@ -123,7 +127,7 @@
           </div>
         </form>
         <form id="resetCompleteForm" class="login-form reset-form" hidden>
-          <p class="subtle-text">Use esta etapa somente ap&oacute;s aprova&ccedil;&atilde;o do administrador. A autoriza&ccedil;&atilde;o expira em 30 minutos.</p>
+          <p class="subtle-text">Crie sua nova senha usando o c&oacute;digo recebido. A autoriza&ccedil;&atilde;o expira em 30 minutos.</p>
           <label>
             Usu&aacute;rio/Login
             <input id="resetCompleteLogin" type="text" placeholder="Digite seu usu&aacute;rio" autocomplete="off">
@@ -693,7 +697,7 @@
                 </div>
                 <button class="ghost-button small" id="refreshPasswordResets" type="button">Atualizar</button>
               </div>
-              <p class="subtle-text">Aprovar libera o usu&aacute;rio para criar a pr&oacute;pria senha usando o c&oacute;digo da solicita&ccedil;&atilde;o. A autoriza&ccedil;&atilde;o expira em 30 minutos e n&atilde;o pode ser reutilizada.</p>
+              <p class="subtle-text">Colaboradores com celular validado s&atilde;o liberados automaticamente. Aqui aparecem apenas pedidos pendentes dos perfis administrativos.</p>
               <div class="table-wrap compact-table">
                 <table class="report-table">
                   <thead>

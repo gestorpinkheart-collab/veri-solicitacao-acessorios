@@ -138,6 +138,7 @@ const elements = {
   forgotPasswordButton: document.querySelector("#forgotPasswordButton"),
   authorizedResetButton: document.querySelector("#authorizedResetButton"),
   resetRequestLogin: document.querySelector("#resetRequestLogin"),
+  resetRequestPhone: document.querySelector("#resetRequestPhone"),
   resetRequestError: document.querySelector("#resetRequestError"),
   cancelResetRequest: document.querySelector("#cancelResetRequest"),
   resetCompleteLogin: document.querySelector("#resetCompleteLogin"),
@@ -705,8 +706,9 @@ async function requestPasswordReset() {
 async function submitPasswordResetRequest(event) {
   event.preventDefault();
   const trimmedLogin = elements.resetRequestLogin.value.trim();
+  const phone = elements.resetRequestPhone.value.trim();
   if (!trimmedLogin) {
-    elements.resetRequestError.textContent = "Informe o usu\u00e1rio/login para solicitar a redefini\u00e7\u00e3o.";
+    elements.resetRequestError.textContent = "Informe o usu\u00e1rio/login.";
     return;
   }
 
@@ -714,15 +716,16 @@ async function submitPasswordResetRequest(event) {
     const response = await fetch(`${API_PASSWORD_RESET_URL}/request`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ login: trimmedLogin }),
+      body: JSON.stringify({ login: trimmedLogin, phone }),
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || "N\u00e3o foi poss\u00edvel registrar a solicita\u00e7\u00e3o.");
-    alert(`${payload.message}\n\nC\u00f3digo da solicita\u00e7\u00e3o: ${payload.requestCode}\n\nGuarde este c\u00f3digo. Ap\u00f3s aprova\u00e7\u00e3o do administrador, informe o c\u00f3digo para criar sua nova senha.`);
+    alert(`${payload.message}\n\nC\u00f3digo da solicita\u00e7\u00e3o: ${payload.requestCode}\n\nGuarde este c\u00f3digo para criar sua nova senha.`);
     elements.resetRequestForm.reset();
     showResetMode("complete");
     elements.resetCompleteLogin.value = trimmedLogin;
-    if (payload.whatsappUrl) openExternalLink(payload.whatsappUrl);
+    elements.resetCompleteCode.value = payload.requestCode || "";
+    if (!payload.autoApproved && payload.whatsappUrl) openExternalLink(payload.whatsappUrl);
   } catch (error) {
     elements.resetRequestError.textContent = error.message || "N\u00e3o foi poss\u00edvel registrar a solicita\u00e7\u00e3o.";
   }
@@ -2183,18 +2186,16 @@ function renderPasswordResetRequests() {
     return;
   }
 
-  if (!passwordResetRequests.length) {
+  const pendingRequests = passwordResetRequests.filter((request) => request.status === "PENDENTE");
+  if (!pendingRequests.length) {
     elements.passwordResetRequestsBody.innerHTML =
-      '<tr><td colspan="6">Nenhuma solicita\u00e7\u00e3o de redefini\u00e7\u00e3o registrada.</td></tr>';
+      '<tr><td colspan="6">Nenhuma solicita\u00e7\u00e3o aguardando aprova\u00e7\u00e3o.</td></tr>';
     return;
   }
 
-  const statusOrder = { PENDENTE: 0, APROVADO: 1, RECUSADO: 2, EXPIRADO: 3, CONCLUIDO: 4 };
-  passwordResetRequests
+  pendingRequests
     .slice()
     .sort((a, b) => {
-      const statusDiff = (statusOrder[a.status] ?? 9) - (statusOrder[b.status] ?? 9);
-      if (statusDiff) return statusDiff;
       return String(b.createdAt || "").localeCompare(String(a.createdAt || ""));
     })
     .forEach((request) => {
@@ -2245,6 +2246,7 @@ async function decidePasswordReset(requestId, decision) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         master: masterCredential,
+        id: requestId,
         requestId,
         decision,
       }),
