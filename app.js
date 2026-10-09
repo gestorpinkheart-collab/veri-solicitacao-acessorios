@@ -1420,7 +1420,18 @@ async function handleSubmit(event) {
       updatedByRole: currentSession.role,
     };
 
-    const savedOrder = existingId ? await patchOrder(existingId, { ...order, id: existingId }) : await createOrder(order);
+    let whatsappNotification = {};
+    if (existingOrder && normalizeStatus(existingOrder.status) !== normalizeStatus(order.status)) {
+      whatsappNotification = await requireWhatsappStatusNotification(existingOrder, order.status);
+      if (whatsappNotification === null) return;
+    }
+
+    const orderPayload = { ...order, id: existingId || undefined };
+    if (existingOrder && normalizeStatus(existingOrder.status) === normalizeStatus(order.status)) {
+      delete orderPayload.status;
+    }
+    if (whatsappNotification.confirmed) orderPayload.whatsappNotification = whatsappNotification;
+    const savedOrder = existingId ? await patchOrder(existingId, orderPayload) : await createOrder(order);
 
     if (currentSession.role === "collaborator") {
       alert(`Pedido ${savedOrder.id} finalizado com sucesso.`);
@@ -1789,9 +1800,15 @@ async function updateStatus(id, status) {
     render();
     return;
   }
+  const whatsappNotification = await requireWhatsappStatusNotification(order, normalizedStatus);
+  if (whatsappNotification === null) {
+    render();
+    return;
+  }
   try {
     const updates = { status: normalizedStatus, updatedBy: currentSession.name, updatedByRole: currentSession.role };
     if (reopenReason) updates.reopenReason = reopenReason;
+    if (whatsappNotification.confirmed) updates.whatsappNotification = whatsappNotification;
     await patchOrder(id, updates);
   } catch (error) {
     alert(`N\u00e3o foi poss\u00edvel alterar o status no banco.\n\n${error.message}`);
@@ -1922,6 +1939,8 @@ async function savePartialDelivery(id, modal) {
     },
   ];
   const nextStatus = deliveryStatusForOrder({ ...order, deliveries });
+  const whatsappNotification = await requireWhatsappStatusNotification({ ...order, deliveries }, nextStatus, { force: true });
+  if (whatsappNotification === null) return;
 
   try {
     await patchOrder(id, {
@@ -1929,6 +1948,7 @@ async function savePartialDelivery(id, modal) {
       status: nextStatus,
       updatedBy: currentSession.name,
       updatedByRole: currentSession.role,
+      ...(whatsappNotification.confirmed ? { whatsappNotification } : {}),
     });
     modal.remove();
     alert(`Entrega registrada. Status atual: ${nextStatus}.`);
@@ -3192,13 +3212,21 @@ async function registerGalvanoplastyShipment(id) {
     receivedBy: trimmedReceivedBy,
     returnDate: trimmedReturnDate,
   };
+  const nextStatus = "Em prepara\u00e7\u00e3o de banho (galvanoplastia)";
+  const whatsappNotification = await requireWhatsappStatusNotification(
+    { ...order, galvanoplasty },
+    nextStatus,
+    { force: true },
+  );
+  if (whatsappNotification === null) return;
 
   try {
     const updated = await patchOrder(id, {
       galvanoplasty,
-      status: "Em prepara\u00e7\u00e3o de banho (galvanoplastia)",
+      status: nextStatus,
       updatedBy: currentSession?.name || "",
       updatedByRole: currentSession?.role || "",
+      ...(whatsappNotification.confirmed ? { whatsappNotification } : {}),
     });
     orders = orders.map((item) => (item.id === id ? { ...item, ...updated } : item));
     render();
@@ -3479,6 +3507,73 @@ function buildStatusMessage(order) {
   };
 
   return statusMessages[currentStatus] || `${base}\n\nStatus atual: ${currentStatus}.\n\nEquipe VERI.`;
+}
+
+function requireWhatsappStatusNotification(order, nextStatus, { force = false } = {}) {
+  if (currentSession?.role !== "consultant") return Promise.resolve({ confirmed: false });
+
+  const normalizedStatus = normalizeStatus(nextStatus);
+  if (!force && normalizeStatus(order.status) === normalizedStatus) {
+    return Promise.resolve({ confirmed: false });
+  }
+  if (!normalizePhone(order.phone)) {
+    alert("Este pedido não possui celular cadastrado. Solicite ao Master a correção antes de alterar o status.");
+    return Promise.resolve(null);
+  }
+
+  document.querySelector(".whatsapp-notification-modal")?.remove();
+  return new Promise((resolve) => {
+    const modal = document.createElement("div");
+    modal.className = "delivery-modal whatsapp-notification-modal";
+    modal.innerHTML = `
+      <div class="delivery-dialog whatsapp-confirm-dialog" role="dialog" aria-modal="true" aria-label="Confirmação obrigatória de WhatsApp">
+        <div class="panel-title-row">
+          <div>
+            <p class="eyebrow">Comunicação obrigatória</p>
+            <h2>Avisar o solicitante</h2>
+          </div>
+        </div>
+        <div class="whatsapp-confirm-summary">
+          <span><strong>Pedido</strong>${order.id}</span>
+          <span><strong>Novo status</strong>${normalizedStatus}</span>
+          <span><strong>Solicitante</strong>${order.requester}</span>
+          <span><strong>Celular</strong>${formatPhone(order.phone)}</span>
+        </div>
+        <p class="subtle-text">Abra o WhatsApp, envie a mensagem preparada e depois confirme o envio para atualizar o pedido.</p>
+        <p class="whatsapp-confirm-state" data-whatsapp-state>Aguardando abertura do WhatsApp.</p>
+        <div class="login-actions whatsapp-confirm-actions">
+          <button class="text-button" type="button" data-cancel-whatsapp>Cancelar</button>
+          <button class="ghost-button whatsapp-action" type="button" data-open-required-whatsapp>Abrir WhatsApp</button>
+          <button class="primary-button" type="button" data-confirm-required-whatsapp disabled>Mensagem enviada</button>
+        </div>
+      </div>
+    `;
+    document.body.append(modal);
+
+    let opened = false;
+    const finish = (result) => {
+      modal.remove();
+      resolve(result);
+    };
+    modal.querySelector("[data-cancel-whatsapp]")?.addEventListener("click", () => finish(null));
+    modal.querySelector("[data-open-required-whatsapp]")?.addEventListener("click", () => {
+      openExternalLink(whatsappUrl({ ...order, status: normalizedStatus }));
+      opened = true;
+      modal.querySelector("[data-confirm-required-whatsapp]").disabled = false;
+      modal.querySelector("[data-whatsapp-state]").textContent = "WhatsApp aberto. Após enviar a mensagem, confirme abaixo.";
+    });
+    modal.querySelector("[data-confirm-required-whatsapp]")?.addEventListener("click", () => {
+      if (!opened) return;
+      finish({
+        confirmed: true,
+        confirmedAt: new Date().toISOString(),
+        status: normalizedStatus,
+        phone: normalizePhone(order.phone),
+        user: currentSession?.name || "",
+        login: currentSession?.login || "",
+      });
+    });
+  });
 }
 
 function whatsappUrl(order) {

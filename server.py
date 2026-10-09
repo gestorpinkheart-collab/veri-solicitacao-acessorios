@@ -451,6 +451,9 @@ class RequestHandler(SimpleHTTPRequestHandler):
 
             try:
                 updated = update_order(order_id, updates)
+            except ValueError as exc:
+                self.send_json({"ok": False, "error": str(exc)}, status=400)
+                return
             except StorageError as exc:
                 self.send_json({"ok": False, "error": str(exc)}, status=503)
                 return
@@ -583,6 +586,10 @@ def update_order(order_id, updates):
     updates = {**updates}
     actor = updates.pop("updatedBy", "")
     actor_role = updates.pop("updatedByRole", "")
+    if actor_role == "consultant" and "status" in updates:
+        notification = updates.get("whatsappNotification")
+        if not isinstance(notification, dict) or notification.get("confirmed") is not True:
+            raise ValueError("Envie e confirme a mensagem obrigatoria do WhatsApp antes de alterar o status.")
     if supabase_enabled():
         try:
             return update_order_supabase(order_id, updates, actor, actor_role)
@@ -595,7 +602,7 @@ def update_order(order_id, updates):
         for index, current in enumerate(orders):
             if current.get("id") == order_id:
                 updated = {**current, **allowed_order_updates(updates)}
-                append_history(updated, history_action(updates), actor, actor_role, allowed_order_updates(updates))
+                append_history(updated, history_action(updates), actor, actor_role, order_update_history_details(updates))
                 orders[index] = updated
                 break
         if updated:
@@ -1478,7 +1485,7 @@ def update_order_supabase(order_id, updates, actor="", actor_role=""):
         return None
     current = db_to_order(current_rows[0])
     merged = {**current, **allowed_order_updates(updates)}
-    append_history(merged, history_action(updates), actor, actor_role, allowed_order_updates(updates))
+    append_history(merged, history_action(updates), actor, actor_role, order_update_history_details(updates))
     try:
         rows = supabase_request(
             f"/rest/v1/{SUPABASE_TABLE}?id=eq.{quote(order_id, safe='')}",
@@ -1827,6 +1834,21 @@ def history_action(updates):
     if "items" in updates:
         return "Itens do pedido atualizados"
     return "Pedido atualizado"
+
+
+def order_update_history_details(updates):
+    details = allowed_order_updates(updates)
+    notification = updates.get("whatsappNotification") if isinstance(updates, dict) else None
+    if isinstance(notification, dict) and notification.get("confirmed"):
+        details["whatsappNotification"] = {
+            "confirmed": True,
+            "confirmedAt": str(notification.get("confirmedAt", "")),
+            "status": str(notification.get("status", "")),
+            "phone": only_digits(notification.get("phone", "")),
+            "user": str(notification.get("user", "")),
+            "login": str(notification.get("login", "")),
+        }
+    return details
 
 
 def allowed_order_updates(updates):
