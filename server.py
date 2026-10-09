@@ -1301,7 +1301,14 @@ def read_local_orders_unlocked():
     except ValueError:
         return []
 
-    return data if isinstance(data, list) else []
+    if not isinstance(data, list):
+        return []
+    return [
+        {**order, "status": public_order_status(order.get("status", ""))}
+        if isinstance(order, dict)
+        else order
+        for order in data
+    ]
 
 
 def read_local_prices_unlocked():
@@ -1624,6 +1631,18 @@ def default_due_date(request_date):
     return current.isoformat()
 
 
+def public_order_status(status):
+    text = str(status or "").strip()
+    if normalize(text) in ("entregue", "finalizado", "finalizado (entregue)"):
+        return "Finalizado"
+    return text
+
+
+def database_order_status(status):
+    # Mantém compatibilidade com a restrição atual do Supabase.
+    return "Entregue" if public_order_status(status) == "Finalizado" else str(status or "").strip()
+
+
 def normalize_order(order):
     request_date = str(order.get("requestDate", "")).strip() or datetime.now().date().isoformat()
     return {
@@ -1634,7 +1653,7 @@ def normalize_order(order):
         "phone": only_digits(order.get("phone", "")),
         "origin": str(order.get("origin", "")).strip(),
         "priority": str(order.get("priority", "")).strip(),
-        "status": str(order.get("status", "")).strip(),
+        "status": public_order_status(order.get("status", "")),
         "notes": str(order.get("notes", "") or "").strip(),
         "items": order.get("items") if isinstance(order.get("items"), list) else [],
         "history": order.get("history") if isinstance(order.get("history"), list) else [],
@@ -1844,6 +1863,8 @@ def updates_to_db(updates, include_history=True, include_deliveries=True):
             continue
         if key == "deliveries" and not include_deliveries:
             continue
+        if key == "status":
+            value = database_order_status(value)
         db_updates[field_map[key]] = None if key == "dueDate" and not value else value
     return db_updates
 
@@ -1857,7 +1878,7 @@ def order_to_db(order, include_history=True, include_deliveries=True):
         "phone": only_digits(order.get("phone", "")),
         "origin": order.get("origin", ""),
         "priority": order.get("priority", ""),
-        "status": order.get("status", ""),
+        "status": database_order_status(order.get("status", "")),
         "notes": order.get("notes", ""),
         "items": order.get("items", []),
         "galvanoplasty": order.get("galvanoplasty") or {},
@@ -1879,7 +1900,7 @@ def db_to_order(row):
         "phone": row.get("phone", ""),
         "origin": row.get("origin", ""),
         "priority": row.get("priority", ""),
-        "status": row.get("status", ""),
+        "status": public_order_status(row.get("status", "")),
         "notes": row.get("notes", ""),
         "items": row.get("items") or [],
         "history": row.get("history") or [],

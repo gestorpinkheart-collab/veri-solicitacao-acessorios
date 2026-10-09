@@ -19,7 +19,7 @@ const statuses = [
   "P\u00f3s banho",
   "Prepara\u00e7\u00e3o final",
   "Entrega parcial",
-  "Entregue",
+  "Finalizado",
 ];
 
 const origins = [
@@ -1534,7 +1534,7 @@ function deliveryTotals(order) {
 
 function deliveryStatusForOrder(order) {
   const totals = deliveryTotals(order);
-  if (totals.total > 0 && totals.pending === 0) return "Entregue";
+  if (totals.total > 0 && totals.pending === 0) return "Finalizado";
   if (totals.delivered > 0) return "Entrega parcial";
   return normalizeStatus(order.status);
 }
@@ -1759,13 +1759,13 @@ async function updateStatus(id, status) {
   const order = orders.find((item) => item.id === id);
   if (!order) return;
   const normalizedStatus = normalizeStatus(status);
-  if (normalizeStatus(order.status) === "Entregue" && !isMasterUser()) {
-    alert("Este pedido já foi entregue. Somente o Master pode reativar pedidos finalizados.");
+  if (normalizeStatus(order.status) === "Finalizado" && !isMasterUser()) {
+    alert("Este pedido já foi finalizado. Somente o Master pode reativá-lo.");
     render();
     return;
   }
   let reopenReason = "";
-  if (normalizeStatus(order.status) === "Entregue" && normalizedStatus !== "Entregue" && isMasterUser()) {
+  if (normalizeStatus(order.status) === "Finalizado" && normalizedStatus !== "Finalizado" && isMasterUser()) {
     const reason = prompt("Informe o motivo da reativação deste pedido:", "");
     if (reason === null) {
       render();
@@ -1779,8 +1779,8 @@ async function updateStatus(id, status) {
     }
   }
   const totals = deliveryTotals(order);
-  if (normalizedStatus === "Entregue" && totals.total > 0 && totals.pending > 0) {
-    alert("Ainda existe saldo pendente neste pedido. Registre a entrega parcial ou complete as quantidades antes de marcar como Entregue.");
+  if (normalizedStatus === "Finalizado" && totals.total > 0 && totals.pending > 0) {
+    alert("Ainda existe saldo pendente neste pedido. Registre a entrega parcial ou complete as quantidades antes de marcar como Finalizado.");
     render();
     return;
   }
@@ -1802,8 +1802,8 @@ async function updateStatus(id, status) {
 async function updateDueDate(id, dueDate) {
   if (!isInternalUser()) return;
   const order = orders.find((item) => item.id === id);
-  if (order && normalizeStatus(order.status) === "Entregue" && !isMasterUser()) {
-    alert("Este pedido já foi entregue. Somente o Master pode reativar pedidos finalizados.");
+  if (order && normalizeStatus(order.status) === "Finalizado" && !isMasterUser()) {
+    alert("Este pedido já foi finalizado. Somente o Master pode reativá-lo.");
     render();
     return;
   }
@@ -1819,8 +1819,8 @@ function registerPartialDelivery(id) {
   if (!isInternalUser()) return;
   const order = orders.find((item) => item.id === id);
   if (!order) return;
-  if (normalizeStatus(order.status) === "Entregue" && !isMasterUser()) {
-    alert("Este pedido já foi entregue. Somente o Master pode reativar pedidos finalizados.");
+  if (normalizeStatus(order.status) === "Finalizado" && !isMasterUser()) {
+    alert("Este pedido já foi finalizado. Somente o Master pode reativá-lo.");
     return;
   }
 
@@ -2475,7 +2475,7 @@ function getFilteredOrders() {
         .join(" ")
         .toLowerCase();
 
-      const hideDeliveredInDefaultList = !status && currentStatus === "Entregue";
+      const hideDeliveredInDefaultList = !status && currentStatus === "Finalizado";
 
       return (
         !hideDeliveredInDefaultList &&
@@ -2495,7 +2495,7 @@ function orderSortByStatus(a, b) {
     "P\u00f3s banho": 3,
     "Prepara\u00e7\u00e3o final": 4,
     "Entrega parcial": 5,
-    Entregue: 6,
+    Finalizado: 6,
   };
   const statusDiff = (order[normalizeStatus(a.status)] ?? 9) - (order[normalizeStatus(b.status)] ?? 9);
   if (statusDiff) return statusDiff;
@@ -2513,7 +2513,7 @@ function statusClass(status) {
   if (currentStatus === "P\u00f3s banho") return "order-post-bath";
   if (currentStatus === "Prepara\u00e7\u00e3o final") return "order-final-prep";
   if (currentStatus === "Entrega parcial") return "order-partial";
-  if (currentStatus === "Entregue") return "order-delivered";
+  if (currentStatus === "Finalizado") return "order-delivered";
   return "";
 }
 
@@ -2547,9 +2547,9 @@ function renderMetrics() {
   const newOpen = visibleOrders.filter((order) => normalizeStatus(order.status) === "Pedido Recebido").length;
   const progress = visibleOrders.filter((order) => {
     const status = normalizeStatus(order.status);
-    return status !== "Pedido Recebido" && status !== "Entregue";
+    return status !== "Pedido Recebido" && status !== "Finalizado";
   }).length;
-  const delivered = visibleOrders.filter((order) => normalizeStatus(order.status) === "Entregue").length;
+  const delivered = visibleOrders.filter((order) => normalizeStatus(order.status) === "Finalizado").length;
   elements.metricTotal.textContent = newOpen;
   elements.metricUrgent.textContent = urgent;
   elements.metricOpen.textContent = progress;
@@ -2565,7 +2565,7 @@ function renderStatusWidgets() {
   if (elements.widgetPostBath) elements.widgetPostBath.textContent = countStatus("P\u00f3s banho");
   if (elements.widgetFinalPrep) elements.widgetFinalPrep.textContent = countStatus("Prepara\u00e7\u00e3o final");
   if (elements.widgetPartial) elements.widgetPartial.textContent = countStatus("Entrega parcial");
-  elements.widgetDelivered.textContent = countStatus("Entregue");
+  elements.widgetDelivered.textContent = countStatus("Finalizado");
   elements.statusWidgets.forEach((button) => {
     button.classList.toggle("active", elements.filterStatus.value === button.dataset.statusFilter);
   });
@@ -2594,7 +2594,7 @@ function renderDashboardTable() {
     const current = grouped.get(key) || { requester: key, orders: 0, pieces: 0, open: 0, delivered: 0 };
     current.orders += 1;
     current.pieces += countPieces([order]);
-    if (normalizeStatus(order.status) === "Entregue") current.delivered += 1;
+    if (normalizeStatus(order.status) === "Finalizado") current.delivered += 1;
     else current.open += 1;
     grouped.set(key, current);
   });
@@ -2723,7 +2723,7 @@ function renderOrders() {
 
   if (!filtered.length) {
     const status = elements.filterStatus.value;
-    elements.ordersList.innerHTML = `<div class="empty">${status ? "Nenhum pedido encontrado." : "Nenhum pedido pendente. Para ver pedidos entregues, filtre por Entregue."}</div>`;
+    elements.ordersList.innerHTML = `<div class="empty">${status ? "Nenhum pedido encontrado." : "Nenhum pedido pendente. Para ver pedidos finalizados, filtre por Finalizado."}</div>`;
     return;
   }
 
@@ -2754,7 +2754,7 @@ function renderCollaboratorOrders() {
 function buildOrderCard(order, { mode }) {
   const card = document.createElement("article");
   const displayStatus = normalizeStatus(order.status);
-  const isDelivered = displayStatus === "Entregue";
+  const isDelivered = displayStatus === "Finalizado";
   const overdueDays = overdueBusinessDays({ ...order, status: displayStatus });
   const canReactivateDelivered = isDelivered && isMasterUser();
   const canChangeDelivered = !isDelivered || isMasterUser();
@@ -2828,13 +2828,13 @@ function buildOrderCard(order, { mode }) {
       ${isManagement ? `
         <label class="compact-control">
           Status
-          <select data-order-status="${order.id}" ${canChangeDelivered ? "" : "disabled"} title="${canReactivateDelivered ? "Para reativar, altere o status e informe o motivo." : canChangeDelivered ? "Alterar status" : "Pedido entregue. Somente Master pode reativar."}">
+          <select data-order-status="${order.id}" ${canChangeDelivered ? "" : "disabled"} title="${canReactivateDelivered ? "Para reativar, altere o status e informe o motivo." : canChangeDelivered ? "Alterar status" : "Pedido finalizado. Somente Master pode reativar."}">
             ${statuses.map((status) => `<option ${status === displayStatus ? "selected" : ""}>${status}</option>`).join("")}
           </select>
         </label>
         <label class="compact-control">
           Previs\u00e3o
-          <input data-order-due-date="${order.id}" type="date" value="${order.dueDate || ""}" ${canChangeDelivered ? "" : "disabled"} title="${canChangeDelivered ? "Alterar previsão" : "Pedido entregue. Somente Master pode reativar."}">
+          <input data-order-due-date="${order.id}" type="date" value="${order.dueDate || ""}" ${canChangeDelivered ? "" : "disabled"} title="${canChangeDelivered ? "Alterar previsão" : "Pedido finalizado. Somente Master pode reativar."}">
         </label>
       ` : `<span class="status-note">${statusHelperText(displayStatus)}</span>`}
       <div class="order-actions" aria-label="A\u00e7\u00f5es do pedido">
@@ -3064,7 +3064,7 @@ function printManagementOrders(type) {
   const isAnalytical = type === "analytical";
   const title = isAnalytical ? "Relatório analítico de pedidos" : "Relatório gerencial de pedidos";
   const totalPieces = countPieces(selectedOrders);
-  const openOrders = selectedOrders.filter((order) => normalizeStatus(order.status) !== "Entregue").length;
+  const openOrders = selectedOrders.filter((order) => normalizeStatus(order.status) !== "Finalizado").length;
   const rows = selectedOrders
     .map((order) => {
       const pieces = countPieces([order]);
@@ -3161,8 +3161,8 @@ async function registerGalvanoplastyShipment(id) {
   if (!isInternalUser()) return;
   const order = orders.find((item) => item.id === id);
   if (!order) return;
-  if (normalizeStatus(order.status) === "Entregue" && !isMasterUser()) {
-    alert("Este pedido já foi entregue. Somente o Master pode reativar pedidos finalizados.");
+  if (normalizeStatus(order.status) === "Finalizado" && !isMasterUser()) {
+    alert("Este pedido já foi finalizado. Somente o Master pode reativá-lo.");
     return;
   }
 
@@ -3412,7 +3412,7 @@ function statusHelperText(status) {
     "P\u00f3s banho": "Confer\u00eancia ap\u00f3s banho",
     "Prepara\u00e7\u00e3o final": "Prepara\u00e7\u00e3o para entrega",
     "Entrega parcial": "Parte do pedido entregue",
-    Entregue: "Pedido finalizado",
+    Finalizado: "Processo produtivo concluído",
   };
   const currentStatus = normalizeStatus(status);
   return messages[currentStatus] || currentStatus || "";
@@ -3438,7 +3438,7 @@ function cloneOrder(id) {
 }
 
 function canManageOrder(order) {
-  if (normalizeStatus(order.status) === "Entregue" && !isMasterUser()) return false;
+  if (normalizeStatus(order.status) === "Finalizado" && !isMasterUser()) return false;
   if (isInternalUser()) return true;
   return (
     normalizeText(order.requester) === normalizeText(currentSession?.name || "") &&
@@ -3475,7 +3475,7 @@ function buildStatusMessage(order) {
     "P\u00f3s banho": `${base}\n\nStatus: P\u00f3s banho.\nSeu pedido retornou do banho e est\u00e1 em confer\u00eancia para a etapa final.\n\nEquipe VERI.`,
     "Prepara\u00e7\u00e3o final": `${base}\n\nStatus: Prepara\u00e7\u00e3o final.\nSeu pedido est\u00e1 sendo preparado para entrega.\n\nEquipe VERI.`,
     "Entrega parcial": `${base}\n\nStatus: Entrega parcial.\nParte do pedido foi entregue. O saldo pendente continua ativo para acompanhamento e nova movimenta\u00e7\u00e3o.\n\nEquipe VERI.`,
-    Entregue: `${base}\n\nStatus: Entregue.\nSeu pedido foi finalizado e entregue. Obrigado por utilizar o sistema VERI.`,
+    Finalizado: `${base}\n\nStatus: Finalizado.\nO processo produtivo do seu pedido foi finalizado e ele será entregue em breve em mãos.\n\nEquipe VERI.`,
   };
 
   return statusMessages[currentStatus] || `${base}\n\nStatus atual: ${currentStatus}.\n\nEquipe VERI.`;
@@ -3488,7 +3488,7 @@ function whatsappUrl(order) {
 function renderReports() {
   const visibleOrders = getReportOrders();
   elements.reportTotalOrders.textContent = visibleOrders.length;
-  elements.reportOpenOrders.textContent = visibleOrders.filter((order) => normalizeStatus(order.status) !== "Entregue").length;
+  elements.reportOpenOrders.textContent = visibleOrders.filter((order) => normalizeStatus(order.status) !== "Finalizado").length;
   elements.reportTotalPieces.textContent = countPieces(visibleOrders);
   elements.reportBody.innerHTML = "";
 
@@ -3793,7 +3793,7 @@ function defaultDueDate(requestDate) {
 }
 
 function overdueBusinessDays(order) {
-  if (normalizeStatus(order?.status) === "Entregue") return 0;
+  if (normalizeStatus(order?.status) === "Finalizado") return 0;
   const dueDate = order?.dueDate || defaultDueDate(order?.requestDate || todayIso);
   const todayDate = parseIsoDate(todayIso);
   const due = parseIsoDate(dueDate);
@@ -3944,7 +3944,7 @@ function repairText(value) {
 function normalizeStatus(status) {
   const text = repairText(status).trim();
   const key = normalizeText(text);
-  if (key === "entregue" || key === "finalizado" || key === "finalizado (entregue)") return "Entregue";
+  if (key === "entregue" || key === "finalizado" || key === "finalizado (entregue)") return "Finalizado";
   if (key === "pedido enviado" || key === "recebido" || key === "pedido recebido") return "Pedido Recebido";
   if (key === "em separacao") return "Em separa\u00e7\u00e3o";
   if (
