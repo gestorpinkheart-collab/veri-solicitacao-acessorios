@@ -16,6 +16,15 @@
   --sage: #92ACA0;
   --warning: #a96d2d;
   --danger: #a23b3b;
+  --status-pending: #b44a4a;
+  --status-pending-dark: #873434;
+  --status-pending-soft: rgba(180, 74, 74, 0.13);
+  --status-progress: #d1a229;
+  --status-progress-dark: #69510b;
+  --status-progress-soft: rgba(209, 162, 41, 0.16);
+  --status-finalized: #326b52;
+  --status-finalized-dark: #234c3a;
+  --status-finalized-soft: rgba(50, 107, 82, 0.14);
   --shadow: 0 18px 46px rgba(47, 71, 61, 0.12);
 }
 
@@ -662,6 +671,28 @@ form,
   background: var(--bg);
 }
 
+.nav-button {
+  gap: 8px;
+}
+
+.nav-pending-badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 23px;
+  height: 23px;
+  border-radius: 999px;
+  padding: 0 7px;
+  background: var(--status-pending);
+  color: #fff;
+  font-size: 0.72rem;
+  line-height: 1;
+}
+
+.nav-button.active .nav-pending-badge {
+  background: #fff;
+  color: var(--status-pending-dark);
+}
+
 .nav-button.active {
   background: linear-gradient(135deg, var(--accent), var(--accent-dark));
   color: #fff;
@@ -729,6 +760,75 @@ label,
   height: 17px;
 }
 
+.pending-orders-notice {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  border: 1px solid rgba(180, 74, 74, 0.38);
+  border-radius: 10px;
+  padding: 11px 12px;
+  background: var(--status-pending-soft);
+}
+
+.pending-orders-notice-icon,
+.pending-orders-alert-icon {
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: rgba(180, 74, 74, 0.18);
+  color: var(--status-pending-dark);
+  font-weight: 900;
+}
+
+.pending-orders-notice-icon {
+  width: 36px;
+  height: 36px;
+}
+
+.pending-orders-notice > div:nth-child(2) {
+  display: grid;
+  gap: 3px;
+}
+
+.pending-orders-notice strong {
+  color: var(--status-pending-dark);
+}
+
+.metric.metric-pending {
+  border-left-color: var(--status-pending);
+  background: linear-gradient(145deg, var(--status-pending-soft), #fff 72%);
+}
+
+.metric.metric-pending strong {
+  color: var(--status-pending-dark);
+}
+
+.metric.metric-progress {
+  border-left-color: var(--status-progress);
+  background: linear-gradient(145deg, var(--status-progress-soft), #fff 72%);
+}
+
+.metric.metric-progress strong {
+  color: var(--status-progress-dark);
+}
+
+.metric.metric-finalized {
+  border-left-color: var(--status-finalized);
+  background: linear-gradient(145deg, var(--status-finalized-soft), #fff 72%);
+}
+
+.metric.metric-finalized strong {
+  color: var(--status-finalized-dark);
+}
+
+.pending-orders-notice span {
+  color: var(--muted);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
 .metric strong {
   display: block;
   margin-top: 8px;
@@ -737,8 +837,13 @@ label,
   line-height: 1;
 }
 
-.urgent strong {
-  color: var(--gold);
+.metric.urgent {
+  border-left-color: var(--status-pending);
+  background: linear-gradient(145deg, var(--status-pending-soft), #fff 72%);
+}
+
+.metric.urgent strong {
+  color: var(--status-pending-dark);
 }
 
 .dashboard-grid {
@@ -1041,61 +1146,54 @@ select:disabled {
 }
 
 .status-widget.received {
-  background: linear-gradient(145deg, rgba(146, 172, 160, 0.22), #ffffff 72%);
-  border-color: rgba(95, 123, 111, 0.35);
+  background: linear-gradient(145deg, var(--status-pending-soft), #ffffff 72%);
+  border-color: rgba(180, 74, 74, 0.38);
 }
 
-.status-widget.progress {
-  background: linear-gradient(145deg, rgba(201, 162, 74, 0.2), #ffffff 72%);
-  border-color: rgba(201, 162, 74, 0.4);
-}
-
-.status-widget.bath {
-  background: linear-gradient(145deg, rgba(82, 126, 134, 0.18), #ffffff 72%);
-  border-color: rgba(82, 126, 134, 0.38);
-}
-
-.status-widget.post-bath {
-  background: linear-gradient(145deg, rgba(122, 139, 177, 0.18), #ffffff 72%);
-  border-color: rgba(122, 139, 177, 0.38);
-}
-
-.status-widget.final-prep {
-  background: linear-gradient(145deg, rgba(127, 111, 150, 0.18), #ffffff 72%);
-  border-color: rgba(127, 111, 150, 0.38);
-}
-
+.status-widget.progress,
+.status-widget.bath,
+.status-widget.post-bath,
+.status-widget.final-prep,
 .status-widget.partial {
-  background: linear-gradient(145deg, rgba(179, 137, 75, 0.2), #ffffff 72%);
-  border-color: rgba(179, 137, 75, 0.42);
+  background: linear-gradient(145deg, var(--status-progress-soft), #ffffff 72%);
+  border-color: rgba(209, 162, 41, 0.42);
 }
 
 .status-widget.delivered {
-  background: linear-gradient(145deg, rgba(146, 172, 160, 0.12), #ffffff 72%);
+  background: linear-gradient(145deg, var(--status-finalized-soft), #ffffff 72%);
+  border-color: rgba(50, 107, 82, 0.42);
 }
 
-.status-widget.progress::after {
-  background: var(--gold);
+.status-widget.received::after {
+  background: var(--status-pending);
 }
 
-.status-widget.bath::after {
-  background: #527e86;
-}
-
-.status-widget.post-bath::after {
-  background: #7a8bb1;
-}
-
-.status-widget.final-prep::after {
-  background: #7f6f96;
-}
-
+.status-widget.progress::after,
+.status-widget.bath::after,
+.status-widget.post-bath::after,
+.status-widget.final-prep::after,
 .status-widget.partial::after {
-  background: #b3894b;
+  background: var(--status-progress);
 }
 
 .status-widget.delivered::after {
-  background: var(--sage);
+  background: var(--status-finalized);
+}
+
+.status-widget.received strong {
+  color: var(--status-pending-dark);
+}
+
+.status-widget.progress strong,
+.status-widget.bath strong,
+.status-widget.post-bath strong,
+.status-widget.final-prep strong,
+.status-widget.partial strong {
+  color: var(--status-progress-dark);
+}
+
+.status-widget.delivered strong {
+  color: var(--status-finalized-dark);
 }
 
 .status-widget span {
@@ -1297,39 +1395,44 @@ select:disabled {
 }
 
 .order-card.order-received {
-  border-left-color: #6f8d7f;
-  background: linear-gradient(90deg, rgba(146, 172, 160, 0.13), #fff 18%);
+  border-left-color: var(--status-pending);
+  background: linear-gradient(90deg, var(--status-pending-soft), #fff 18%);
 }
 
 .order-card.order-progress {
-  border-left-color: #c9a24a;
-  background: linear-gradient(90deg, rgba(201, 162, 74, 0.13), #fff 18%);
+  border-left-color: var(--status-progress);
+  background: linear-gradient(90deg, var(--status-progress-soft), #fff 18%);
 }
 
 .order-card.order-bath {
-  border-left-color: #527e86;
-  background: linear-gradient(90deg, rgba(82, 126, 134, 0.13), #fff 18%);
+  border-left-color: var(--status-progress);
+  background: linear-gradient(90deg, var(--status-progress-soft), #fff 18%);
 }
 
 .order-card.order-post-bath {
-  border-left-color: #7a8bb1;
-  background: linear-gradient(90deg, rgba(122, 139, 177, 0.13), #fff 18%);
+  border-left-color: var(--status-progress);
+  background: linear-gradient(90deg, var(--status-progress-soft), #fff 18%);
 }
 
 .order-card.order-final-prep {
-  border-left-color: #7f6f96;
-  background: linear-gradient(90deg, rgba(127, 111, 150, 0.13), #fff 18%);
+  border-left-color: var(--status-progress);
+  background: linear-gradient(90deg, var(--status-progress-soft), #fff 18%);
 }
 
 .order-card.order-delivered {
-  border-left-color: #8ea39b;
-  background: linear-gradient(90deg, rgba(142, 163, 155, 0.1), #fff 18%);
-  opacity: 0.82;
+  border-left-color: var(--status-finalized);
+  background: linear-gradient(90deg, var(--status-finalized-soft), #fff 18%);
+  opacity: 0.9;
 }
 
 .order-card.order-late {
-  border-left-color: var(--danger);
-  background: linear-gradient(90deg, rgba(162, 59, 59, 0.1), #fff 18%);
+  border-left-color: var(--status-pending);
+  background: linear-gradient(90deg, var(--status-pending-soft), #fff 18%);
+}
+
+.order-card.order-partial {
+  border-left-color: var(--status-progress);
+  background: linear-gradient(90deg, var(--status-progress-soft), #fff 18%);
 }
 
 .order-card.locked-order {
@@ -1641,37 +1744,38 @@ select:disabled {
 }
 
 .order-received .status-pill {
-  background: rgba(146, 172, 160, 0.22);
+  background: var(--status-pending-soft);
+  color: var(--status-pending-dark);
 }
 
 .order-progress .status-pill {
-  background: rgba(201, 162, 74, 0.2);
-  color: #5f4a10;
+  background: var(--status-progress-soft);
+  color: var(--status-progress-dark);
 }
 
 .order-bath .status-pill {
-  background: rgba(82, 126, 134, 0.18);
-  color: #31555d;
+  background: var(--status-progress-soft);
+  color: var(--status-progress-dark);
 }
 
 .order-post-bath .status-pill {
-  background: rgba(122, 139, 177, 0.18);
-  color: #415174;
+  background: var(--status-progress-soft);
+  color: var(--status-progress-dark);
 }
 
 .order-final-prep .status-pill {
-  background: rgba(127, 111, 150, 0.18);
-  color: #4f4166;
+  background: var(--status-progress-soft);
+  color: var(--status-progress-dark);
 }
 
 .order-partial .status-pill {
-  background: rgba(179, 137, 75, 0.2);
-  color: #6d4d1e;
+  background: var(--status-progress-soft);
+  color: var(--status-progress-dark);
 }
 
 .order-delivered .status-pill {
-  background: rgba(142, 163, 155, 0.18);
-  color: #51665d;
+  background: var(--status-finalized-soft);
+  color: var(--status-finalized-dark);
 }
 
 .order-footer {
@@ -1704,6 +1808,105 @@ select:disabled {
   padding: 18px;
   background: rgba(20, 37, 31, 0.42);
   backdrop-filter: blur(6px);
+}
+
+.pending-orders-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(20, 37, 31, 0.48);
+  backdrop-filter: blur(6px);
+}
+
+.pending-orders-dialog {
+  width: min(510px, 100%);
+  display: grid;
+  gap: 16px;
+  border: 1px solid rgba(180, 74, 74, 0.34);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow: 0 30px 78px rgba(20, 37, 31, 0.34);
+  padding: 24px;
+}
+
+.pending-orders-alert-icon {
+  width: 48px;
+  height: 48px;
+  font-size: 1.2rem;
+}
+
+.pending-orders-alert-copy {
+  display: grid;
+  gap: 7px;
+}
+
+.pending-orders-alert-copy .eyebrow {
+  color: var(--status-pending-dark);
+}
+
+.pending-orders-alert-copy h2 {
+  color: var(--accent-dark);
+  font-size: 1.45rem;
+}
+
+.pending-orders-alert-copy p:last-child {
+  margin: 0;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.pending-orders-breakdown {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.pending-orders-breakdown span {
+  border-radius: 9px;
+  background: var(--status-pending-soft);
+  padding: 11px 12px;
+  color: var(--status-pending-dark);
+  font-weight: 800;
+}
+
+.pending-orders-breakdown span:nth-child(2) {
+  background: var(--status-progress-soft);
+  color: var(--status-progress-dark);
+}
+
+.pending-orders-breakdown strong {
+  margin-right: 4px;
+  font-size: 1.2rem;
+}
+
+.pending-orders-alert-actions {
+  margin-top: 2px;
+}
+
+@media (max-width: 560px) {
+  .pending-orders-notice {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .pending-orders-notice button {
+    grid-column: 1 / -1;
+    width: 100%;
+  }
+
+  .pending-orders-breakdown {
+    grid-template-columns: 1fr;
+  }
+
+  .pending-orders-alert-actions {
+    align-items: stretch;
+  }
+
+  .pending-orders-alert-actions button {
+    width: 100%;
+  }
 }
 
 .delivery-dialog {

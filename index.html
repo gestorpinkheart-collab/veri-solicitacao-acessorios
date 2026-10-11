@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>VERI | Solicitação de Peças</title>
-    <link rel="stylesheet" href="styles.css?v=20260914-entrega-parcial">
+    <link rel="stylesheet" href="styles.css?v=20261010-status-colors">
   </head>
   <body>
     <section class="entry-screen" id="entryScreen" aria-label="Login">
@@ -194,7 +194,10 @@
       </section>
 
       <nav class="app-nav internal-only" aria-label="Menu principal">
-        <button class="nav-button active" type="button" data-view="managementView" onclick="showView('managementView')">Gestão de pedidos</button>
+        <button class="nav-button active" type="button" data-view="managementView" onclick="showView('managementView')">
+          <span>Gestão de pedidos</span>
+          <span class="nav-pending-badge" id="navPendingBadge" hidden>0</span>
+        </button>
         <button class="nav-button" type="button" data-view="dashboardView" onclick="showView('dashboardView')">Dashboard</button>
         <button class="nav-button master-only" type="button" data-view="masterView" onclick="showView('masterView')">Master</button>
       </nav>
@@ -220,6 +223,14 @@
                   </svg>
                 </button>
               </div>
+            </div>
+            <div class="pending-orders-notice" id="pendingOrdersNotice" hidden>
+              <div class="pending-orders-notice-icon" aria-hidden="true">!</div>
+              <div>
+                <strong id="pendingOrdersNoticeTitle">Pedidos aguardando análise</strong>
+                <span id="pendingOrdersNoticeText"></span>
+              </div>
+              <button class="ghost-button small" id="openPendingOrders" type="button">Ver fila</button>
             </div>
             <div class="filters">
               <label>
@@ -278,7 +289,7 @@
 
         <section id="dashboardView" class="app-view">
           <section class="metrics-grid" aria-label="Indicadores de pedidos">
-            <article class="metric">
+            <article class="metric metric-pending">
               <span>Novos abertos</span>
               <strong id="metricTotal">0</strong>
             </article>
@@ -286,11 +297,11 @@
               <span>Urgentes</span>
               <strong id="metricUrgent">0</strong>
             </article>
-            <article class="metric">
+            <article class="metric metric-progress">
               <span>Em andamento</span>
               <strong id="metricOpen">0</strong>
             </article>
-            <article class="metric">
+            <article class="metric metric-finalized">
               <span>Finalizados</span>
               <strong id="metricPieces">0</strong>
             </article>

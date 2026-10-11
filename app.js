@@ -106,6 +106,7 @@ let editingManagementUserLogin = "";
 let expandedOrderIds = new Set();
 let activeLoginMode = "common";
 let collaboratorAccessMode = "login";
+let pendingOrdersAlertShown = false;
 
 const elements = {
   entryScreen: document.querySelector("#entryScreen"),
@@ -181,6 +182,11 @@ const elements = {
   printManagementSummary: document.querySelector("#printManagementSummary"),
   printManagementAnalytical: document.querySelector("#printManagementAnalytical"),
   statusWidgets: document.querySelectorAll("[data-status-filter]"),
+  navPendingBadge: document.querySelector("#navPendingBadge"),
+  pendingOrdersNotice: document.querySelector("#pendingOrdersNotice"),
+  pendingOrdersNoticeTitle: document.querySelector("#pendingOrdersNoticeTitle"),
+  pendingOrdersNoticeText: document.querySelector("#pendingOrdersNoticeText"),
+  openPendingOrders: document.querySelector("#openPendingOrders"),
   widgetReceived: document.querySelector("#widgetReceived"),
   widgetProgress: document.querySelector("#widgetProgress"),
   widgetBathPrep: document.querySelector("#widgetBathPrep"),
@@ -311,6 +317,7 @@ async function init() {
   elements.statusWidgets.forEach((button) => {
     button.addEventListener("click", () => applyStatusWidgetFilter(button.dataset.statusFilter));
   });
+  elements.openPendingOrders?.addEventListener("click", openPendingOrdersQueue);
   elements.dashboardDateFrom.addEventListener("change", render);
   elements.dashboardDateTo.addEventListener("change", render);
   elements.dashboardFilterStatus.addEventListener("change", render);
@@ -817,6 +824,8 @@ function logout() {
   masterCredential = null;
   masterUsers = [];
   masterDatabase = null;
+  pendingOrdersAlertShown = false;
+  document.querySelector(".pending-orders-modal")?.remove();
   elements.loginError.textContent = "";
   elements.masterPassword.value = "";
   if (elements.loginPhone) elements.loginPhone.value = "";
@@ -1961,12 +1970,86 @@ async function savePartialDelivery(id, modal) {
 function render() {
   renderMetrics();
   renderStatusWidgets();
+  renderPendingOrderIndicators();
   renderCharts();
   renderOrders();
   renderDashboardTable();
   renderReports();
   renderCollaboratorOrders();
   renderMasterPanel();
+  showPendingOrdersAlertOnEntry();
+}
+
+function pendingOrdersSummary() {
+  const pending = orders.filter((order) => normalizeStatus(order.status) !== "Finalizado");
+  const received = pending.filter((order) => normalizeStatus(order.status) === "Pedido Recebido").length;
+  return {
+    total: pending.length,
+    received,
+    inProgress: Math.max(0, pending.length - received),
+  };
+}
+
+function renderPendingOrderIndicators() {
+  const isOrderManager = currentSession?.role === "consultant";
+  const summary = pendingOrdersSummary();
+  const shouldShow = isOrderManager && summary.total > 0;
+
+  if (elements.navPendingBadge) {
+    elements.navPendingBadge.hidden = !shouldShow;
+    elements.navPendingBadge.textContent = String(summary.total);
+    elements.navPendingBadge.setAttribute("aria-label", `${summary.total} pedidos pendentes`);
+  }
+  if (!elements.pendingOrdersNotice) return;
+  elements.pendingOrdersNotice.hidden = !shouldShow;
+  if (!shouldShow) return;
+
+  elements.pendingOrdersNoticeTitle.textContent = `${summary.total} pedido${summary.total === 1 ? "" : "s"} aguardando análise`;
+  elements.pendingOrdersNoticeText.textContent = `${summary.received} novo${summary.received === 1 ? "" : "s"} e ${summary.inProgress} em andamento.`;
+}
+
+function showPendingOrdersAlertOnEntry() {
+  if (pendingOrdersAlertShown || currentSession?.role !== "consultant") return;
+  const summary = pendingOrdersSummary();
+  if (!summary.total) return;
+
+  pendingOrdersAlertShown = true;
+  document.querySelector(".pending-orders-modal")?.remove();
+  const modal = document.createElement("div");
+  modal.className = "pending-orders-modal";
+  modal.innerHTML = `
+    <div class="pending-orders-dialog" role="alertdialog" aria-modal="true" aria-labelledby="pendingOrdersAlertTitle">
+      <div class="pending-orders-alert-icon" aria-hidden="true">!</div>
+      <div class="pending-orders-alert-copy">
+        <p class="eyebrow">Atenção necessária</p>
+        <h2 id="pendingOrdersAlertTitle">Você tem ${summary.total} pedido${summary.total === 1 ? "" : "s"} pendente${summary.total === 1 ? "" : "s"}</h2>
+        <p>Existem solicitações aguardando recebimento ou acompanhamento da Gestão de Pedidos.</p>
+      </div>
+      <div class="pending-orders-breakdown">
+        <span><strong>${summary.received}</strong> novo${summary.received === 1 ? "" : "s"}</span>
+        <span><strong>${summary.inProgress}</strong> em andamento</span>
+      </div>
+      <div class="login-actions pending-orders-alert-actions">
+        <button class="text-button" type="button" data-close-pending-alert>Agora não</button>
+        <button class="primary-button" type="button" data-open-pending-alert>Ver pedidos pendentes</button>
+      </div>
+    </div>
+  `;
+  document.body.append(modal);
+  modal.querySelector("[data-close-pending-alert]")?.addEventListener("click", () => modal.remove());
+  modal.querySelector("[data-open-pending-alert]")?.addEventListener("click", () => {
+    modal.remove();
+    openPendingOrdersQueue();
+  });
+}
+
+function openPendingOrdersQueue() {
+  showView("managementView");
+  elements.searchInput.value = "";
+  elements.filterStatus.value = "";
+  elements.filterPriority.value = "";
+  renderOrders();
+  elements.pendingOrdersNotice?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function renderMasterPanel() {
