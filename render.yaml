@@ -1,14 +1,22 @@
+# Configuração do Render (Blueprint) — Solicitação de Acessórios VERI.
+# No Render: New → Blueprint → escolha este repositório e o ramo "main".
+# SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY precisam ser coladas à mão.
 services:
   - type: web
     name: veri-solicitacao-acessorios
-    env: python
+    runtime: python
     plan: free
-    buildCommand: "pip install -r requirements.txt"
-    startCommand: "python server.py"
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    startCommand: python server.py
+    healthCheckPath: /api/health
+    autoDeploy: true      # cada envio ao ramo publica uma versão nova
     envVars:
       - key: SUPABASE_URL
-        sync: false
+        sync: false       # o Render pede este valor ao criar o serviço
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
       - key: SUPABASE_ORDERS_TABLE
         value: accessory_orders
+      - key: SUPABASE_PASSWORD_RESETS_TABLE
+        value: accessory_password_resets
