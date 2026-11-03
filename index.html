@@ -85,11 +85,11 @@
               </label>
               <label>
                 Senha
-                <input id="registerPassword" type="password" placeholder="Crie uma senha" autocomplete="new-password">
+                <input id="registerPassword" type="password" minlength="8" placeholder="Crie uma senha (m&iacute;nimo 8 caracteres)" autocomplete="new-password">
               </label>
               <label>
                 Confirmar senha
-                <input id="registerConfirmPassword" type="password" placeholder="Repita a senha" autocomplete="new-password">
+                <input id="registerConfirmPassword" type="password" minlength="8" placeholder="Repita a senha" autocomplete="new-password">
               </label>
             </div>
           </div>
@@ -110,7 +110,7 @@
           </div>
         </form>
         <form id="resetRequestForm" class="login-form reset-form" hidden>
-          <p class="subtle-text">Informe seu usu&aacute;rio e o celular cadastrado. Para colaboradores, a libera&ccedil;&atilde;o &eacute; imediata.</p>
+          <p class="subtle-text">Informe seu usu&aacute;rio e o celular cadastrado. O Master confere o pedido e envia o c&oacute;digo de autoriza&ccedil;&atilde;o pelo WhatsApp do celular cadastrado.</p>
           <label>
             Usu&aacute;rio/Login
             <input id="resetRequestLogin" type="text" placeholder="Digite seu usu&aacute;rio" autocomplete="off">
@@ -134,15 +134,15 @@
           </label>
           <label>
             C&oacute;digo da solicita&ccedil;&atilde;o
-            <input id="resetCompleteCode" type="text" placeholder="Ex.: RS-000000" autocomplete="off">
+            <input id="resetCompleteCode" type="text" placeholder="Ex.: RS-1A2B3C4D" autocomplete="off">
           </label>
           <label>
             Nova senha
-            <input id="resetCompletePassword" type="password" placeholder="Digite sua nova senha" autocomplete="new-password">
+            <input id="resetCompletePassword" type="password" minlength="8" placeholder="M&iacute;nimo 8 caracteres" autocomplete="new-password">
           </label>
           <label>
             Confirmar senha
-            <input id="resetCompleteConfirm" type="password" placeholder="Repita sua nova senha" autocomplete="new-password">
+            <input id="resetCompleteConfirm" type="password" minlength="8" placeholder="Repita sua nova senha" autocomplete="new-password">
           </label>
           <p class="login-error" id="resetCompleteError" role="alert"></p>
           <div class="login-actions">
@@ -162,11 +162,11 @@
         <form id="passwordForm" class="login-form">
           <label>
             Nova senha
-            <input id="newPassword" type="password" minlength="4" required>
+            <input id="newPassword" type="password" minlength="8" placeholder="M&iacute;nimo 8 caracteres" required>
           </label>
           <label>
             Confirmar senha
-            <input id="confirmPassword" type="password" minlength="4" required>
+            <input id="confirmPassword" type="password" minlength="8" required>
           </label>
           <p class="login-error" id="passwordError" role="alert"></p>
           <div class="login-actions">
@@ -676,7 +676,7 @@
                 </label>
                 <label>
                   Senha padr&atilde;o
-                  <input id="managementUserPassword" type="password" minlength="4" placeholder="Senha provis&oacute;ria" autocomplete="new-password" required>
+                  <input id="managementUserPassword" type="password" minlength="8" placeholder="Senha provis&oacute;ria" autocomplete="new-password" required>
                 </label>
                 <button class="primary-button" id="managementUserSubmit" type="submit">Criar usu&aacute;rio</button>
                 <button class="ghost-button" id="cancelManagementUserEdit" type="button" hidden>Cancelar edi&ccedil;&atilde;o</button>
@@ -708,7 +708,7 @@
                 </div>
                 <button class="ghost-button small" id="refreshPasswordResets" type="button">Atualizar</button>
               </div>
-              <p class="subtle-text">Colaboradores com celular validado s&atilde;o liberados automaticamente. Aqui aparecem apenas pedidos pendentes dos perfis administrativos.</p>
+              <p class="subtle-text">Toda redefini&ccedil;&atilde;o passa pela aprova&ccedil;&atilde;o do Master. Ao aprovar, o c&oacute;digo aparece aqui: envie pelo WhatsApp somente para o celular cadastrado do usu&aacute;rio. O c&oacute;digo vale 30 minutos.</p>
               <div class="table-wrap compact-table">
                 <table class="report-table">
                   <thead>

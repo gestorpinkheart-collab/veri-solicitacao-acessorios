@@ -1,16 +1,12 @@
 const STORAGE_KEY = "factoryPartOrders";
 const SESSION_KEY = "factoryPartOrdersSession";
-const USERS_KEY = "factoryPartOrdersUsersV2";
 const API_ORDERS_URL = "/api/orders";
 const API_ACCESS_LOGS_URL = "/api/access-logs";
 const API_PRICES_URL = "/api/prices";
 const API_COST_SETTINGS_URL = "/api/cost-settings";
 const API_PASSWORD_RESET_URL = "/api/password-reset";
-const defaultUsers = [
-  { login: "Charles Marinho", password: "12345", name: "Charles Marinho", role: "master", mustChangePassword: true },
-  { login: "Willians.Jorge", password: "12345", name: "Willians Jorge", role: "master", mustChangePassword: true },
-  { login: "Juliano", password: "12345", name: "Juliano", role: "consultant", mustChangePassword: true },
-];
+const PASSWORD_MIN_LENGTH = 8;
+const SESSION_EXPIRED_MESSAGE = "Sess\u00e3o expirada. Entre novamente.";
 
 const statuses = [
   "Pedido Recebido",
@@ -95,10 +91,8 @@ let prices = [];
 let costSettings = { goldValue: 800, rhodiumValue: 2500, rhodiumFactor: 0.7 };
 let currentSession = loadSession();
 let apiAvailable = false;
-let users = loadUsers();
 let masterUsers = [];
 let passwordResetRequests = [];
-let masterCredential = null;
 let masterDatabase = null;
 let pendingUser = null;
 let isSubmittingOrder = false;
@@ -278,14 +272,7 @@ async function init() {
   populateStatusOptions();
   populatePriceOptions();
   populateRegisterOriginOptions();
-  try {
-    orders = await loadOrders(false);
-    await loadCostData();
-  } catch (error) {
-    orders = [];
-    apiAvailable = false;
-    console.error(error);
-  }
+  if (currentSession?.token) await loadSessionData(false);
   applySessionState();
 
   elements.loginForm.addEventListener("submit", handleLogin);
@@ -369,41 +356,53 @@ function loadSession() {
 
   try {
     const parsed = JSON.parse(saved);
-    return parsed?.name ? parsed : null;
+    return parsed?.name && parsed?.token ? parsed : null;
   } catch {
     return null;
   }
 }
 
-function loadUsers() {
-  const saved = localStorage.getItem(USERS_KEY);
-  if (!saved) return defaultUsers;
-
-  try {
-    const parsed = JSON.parse(saved);
-    return Array.isArray(parsed) ? normalizeUsers(parsed) : defaultUsers;
-  } catch {
-    return defaultUsers;
-  }
-}
-
-function normalizeUsers(userList) {
-  const legacyRoleMap = { admin: "master", operator: "consultant" };
-  const normalized = userList.map((user) => ({ ...user, role: legacyRoleMap[user.role] || user.role }));
-  const byLogin = new Map(defaultUsers.map((user) => [normalizeText(user.login), user]));
-  normalized.forEach((user) => byLogin.set(normalizeText(user.login), { ...byLogin.get(normalizeText(user.login)), ...user }));
-  return [...byLogin.values()];
-}
-
-function saveUsers() {
-  localStorage.setItem(USERS_KEY, JSON.stringify(users));
-}
-
-function saveSession(session) {
-  currentSession = session;
-  sessionStorage.setItem(SESSION_KEY, JSON.stringify(session));
+function saveSession(session, token) {
+  currentSession = { ...session, token };
+  sessionStorage.setItem(SESSION_KEY, JSON.stringify(currentSession));
   applySessionState();
-  logAccess(session);
+  loadSessionData();
+}
+
+async function loadSessionData(shouldRender = true) {
+  try {
+    orders = await loadOrders(false);
+    await loadCostData();
+  } catch (error) {
+    orders = [];
+    console.error(error);
+  }
+  if (shouldRender && currentSession?.name) render();
+}
+
+function sessionToken() {
+  return currentSession?.token || pendingUser?.token || "";
+}
+
+async function apiFetch(url, options = {}) {
+  const headers = { ...(options.headers || {}) };
+  const token = sessionToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  if (options.body !== undefined && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
+  const response = await fetch(url, { cache: "no-store", ...options, headers });
+  if (response.status === 401 && token) {
+    const message = await apiErrorMessage(response.clone());
+    expireSession(message || SESSION_EXPIRED_MESSAGE);
+    throw new Error(message || SESSION_EXPIRED_MESSAGE);
+  }
+  return response;
+}
+
+function expireSession(message) {
+  if (!currentSession && !pendingUser) return;
+  logout();
+  showResetMode("login");
+  showLoginError(message || SESSION_EXPIRED_MESSAGE);
 }
 
 async function handleLogin(event) {
@@ -458,21 +457,23 @@ async function handleCollaboratorLogin() {
     return;
   }
 
-  let user = null;
+  let auth = null;
   try {
-    user = await authenticateInternalUser(login, password, "collaborator");
+    auth = await authenticateInternalUser(login, password, "collaborator");
   } catch (error) {
     showLoginError(error.message);
     return;
   }
 
-  if (!user) {
+  if (!auth) {
     showLoginError("Usu\u00e1rio ou senha inv\u00e1lidos.");
     return;
   }
 
+  const { user, token } = auth;
+  elements.collaboratorPassword.value = "";
   if (user.mustChangePassword) {
-    pendingUser = { ...user, currentPassword: password, accessMode: activeLoginMode };
+    pendingUser = { ...user, token, accessMode: "collaborator" };
     elements.entryScreen.hidden = true;
     elements.passwordScreen.hidden = false;
     return;
@@ -482,10 +483,10 @@ async function handleCollaboratorLogin() {
     name: user.name,
     phone: user.phone,
     origin: user.origin,
-    role: "collaborator",
+    role: user.role,
     login: user.login,
     accessMode: "collaborator",
-  });
+  }, token);
 }
 
 async function handleCollaboratorRegistration() {
@@ -508,8 +509,8 @@ async function handleCollaboratorRegistration() {
     showLoginError("Informe um telefone corporativo v\u00e1lido com DDD e 9 d\u00edgitos. Exemplo: (11) 99999-9999.");
     return;
   }
-  if (password.length < 4) {
-    showLoginError("A senha deve ter pelo menos 4 caracteres.");
+  if (password.length < PASSWORD_MIN_LENGTH) {
+    showLoginError(`A senha deve ter pelo menos ${PASSWORD_MIN_LENGTH} caracteres.`);
     return;
   }
   if (password !== confirmPassword) {
@@ -518,9 +519,8 @@ async function handleCollaboratorRegistration() {
   }
 
   try {
-    const response = await fetch("/api/users", {
+    const response = await apiFetch("/api/users", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ login, name, origin, phone, password, role: "collaborator" }),
     });
     const payload = await response.json().catch(() => ({}));
@@ -546,54 +546,52 @@ async function handleCollaboratorRegistration() {
 async function handleInternalLogin() {
   const login = elements.internalLogin.value.trim();
   const password = elements.masterPassword.value;
-  let user = null;
+  if (!login || !password) {
+    showLoginError("Informe usu\u00e1rio e senha para entrar.");
+    return;
+  }
+
+  let auth = null;
   try {
-    user = await authenticateInternalUser(login, password, activeLoginMode);
-    if (!user && activeLoginMode === "consultant") {
-      user = await authenticateInternalUser(login, password, "master");
-    }
+    auth = await authenticateInternalUser(login, password, activeLoginMode);
   } catch (error) {
     showLoginError(error.message);
     return;
   }
 
-  if (!user) {
+  if (!auth) {
     showLoginError("Login ou senha inv\u00e1lidos.");
     return;
   }
 
+  const { user, token } = auth;
+  elements.masterPassword.value = "";
   if (user.mustChangePassword) {
-    pendingUser = { ...user, currentPassword: password };
+    pendingUser = { ...user, token, accessMode: activeLoginMode };
     elements.entryScreen.hidden = true;
     elements.passwordScreen.hidden = false;
     return;
   }
 
-  if (user.role === "master" && activeLoginMode === "master") {
-    masterCredential = { login, password };
-  }
-  saveSession({ name: user.name, role: user.role, login: user.login, accessMode: activeLoginMode });
+  saveSession({ name: user.name, role: user.role, login: user.login, phone: user.phone || "", origin: user.origin || "", accessMode: activeLoginMode }, token);
 }
 
 async function authenticateInternalUser(login, password, role) {
+  let response;
   try {
-    const response = await fetch("/api/auth", {
+    response = await fetch("/api/auth", {
       method: "POST",
+      cache: "no-store",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ login, password, role }),
     });
-    if (response.ok) {
-      const payload = await response.json();
-      return payload.user;
-    }
-    const payload = await response.json().catch(() => ({}));
-    if (response.status >= 500 && payload.error) throw new Error(payload.error);
-    return null;
   } catch {
-    const user = users.find((item) => normalizeText(item.login) === normalizeText(login));
-    if (!user || user.password !== password || user.role !== role) return null;
-    return user;
+    throw new Error("N\u00e3o foi poss\u00edvel falar com o servidor. Confira sua conex\u00e3o e tente novamente.");
   }
+  const payload = await response.json().catch(() => ({}));
+  if (response.ok && payload.user && payload.token) return { user: payload.user, token: payload.token };
+  if (response.status === 401) return null;
+  throw new Error(payload.error || `Erro ${response.status} ao entrar.`);
 }
 
 async function findKnownNamesForPhone(phone) {
@@ -602,7 +600,7 @@ async function findKnownNamesForPhone(phone) {
 
   if (location.protocol.startsWith("http")) {
     try {
-      const response = await fetch(`/api/status?phone=${encodeURIComponent(normalizedPhone)}`, { cache: "no-store" });
+      const response = await apiFetch(`/api/status?phone=${encodeURIComponent(normalizedPhone)}`);
       if (response.ok) {
         const data = await response.json();
         if (Array.isArray(data)) phoneOrders = data;
@@ -658,32 +656,25 @@ async function handlePasswordChange(event) {
     return;
   }
 
-  if (password === "12345") {
-    elements.passwordError.textContent = "Escolha uma senha diferente da provis\u00f3ria.";
+  if (password.length < PASSWORD_MIN_LENGTH) {
+    elements.passwordError.textContent = `A senha deve ter pelo menos ${PASSWORD_MIN_LENGTH} caracteres.`;
     return;
   }
 
   try {
-    const response = await fetch("/api/users/password", {
+    const response = await apiFetch("/api/users/password", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        login: pendingUser.login,
-        currentPassword: pendingUser.currentPassword,
-        newPassword: password,
-      }),
+      body: JSON.stringify({ newPassword: password }),
     });
-    const payload = await response.json();
-    if (!response.ok) {
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || !payload.token) {
       elements.passwordError.textContent = payload.error || "N\u00e3o foi poss\u00edvel trocar a senha.";
       return;
     }
     const accessMode = pendingUser?.accessMode || payload.user.role;
     pendingUser = null;
     elements.passwordForm.reset();
-    if (payload.user.role === "master" && accessMode === "master") {
-      masterCredential = { login: payload.user.login, password };
-    }
+    elements.passwordError.textContent = "";
     saveSession({
       name: payload.user.name,
       role: payload.user.role,
@@ -691,18 +682,9 @@ async function handlePasswordChange(event) {
       phone: payload.user.phone || "",
       origin: payload.user.origin || "",
       accessMode,
-    });
+    }, payload.token);
   } catch (error) {
-    users = users.map((user) =>
-      user.login === pendingUser.login ? { ...user, password, mustChangePassword: false } : user
-    );
-    saveUsers();
-    const user = users.find((item) => item.login === pendingUser.login);
-    const accessMode = pendingUser?.accessMode || user?.role || "";
-    pendingUser = null;
-    elements.passwordForm.reset();
-    if (user) saveSession({ name: user.name, role: user.role, login: user.login, phone: user.phone || "", origin: user.origin || "", accessMode });
-    else elements.passwordError.textContent = error.message;
+    elements.passwordError.textContent = error.message || "N\u00e3o foi poss\u00edvel trocar a senha.";
   }
 }
 
@@ -720,19 +702,18 @@ async function submitPasswordResetRequest(event) {
   }
 
   try {
-    const response = await fetch(`${API_PASSWORD_RESET_URL}/request`, {
+    const response = await apiFetch(`${API_PASSWORD_RESET_URL}/request`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ login: trimmedLogin, phone }),
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || "N\u00e3o foi poss\u00edvel registrar a solicita\u00e7\u00e3o.");
-    alert(`${payload.message}\n\nC\u00f3digo da solicita\u00e7\u00e3o: ${payload.requestCode}\n\nGuarde este c\u00f3digo para criar sua nova senha.`);
+    alert(`${payload.message || "Pedido enviado. O Master vai confirmar e te enviar o c\u00f3digo."}\n\nQuando receber o c\u00f3digo pelo WhatsApp, volte aqui em "J\u00e1 tenho autoriza\u00e7\u00e3o" para criar sua nova senha.`);
     elements.resetRequestForm.reset();
     showResetMode("complete");
     elements.resetCompleteLogin.value = trimmedLogin;
-    elements.resetCompleteCode.value = payload.requestCode || "";
-    if (!payload.autoApproved && payload.whatsappUrl) openExternalLink(payload.whatsappUrl);
+    elements.resetCompleteCode.value = "";
+    if (payload.whatsappUrl) openExternalLink(payload.whatsappUrl);
   } catch (error) {
     elements.resetRequestError.textContent = error.message || "N\u00e3o foi poss\u00edvel registrar a solicita\u00e7\u00e3o.";
   }
@@ -753,15 +734,18 @@ async function submitAuthorizedPasswordReset(event) {
     elements.resetCompleteError.textContent = "Informe usu\u00e1rio, c\u00f3digo e nova senha.";
     return;
   }
+  if (newPassword.length < PASSWORD_MIN_LENGTH) {
+    elements.resetCompleteError.textContent = `A senha deve ter pelo menos ${PASSWORD_MIN_LENGTH} caracteres.`;
+    return;
+  }
   if (newPassword !== confirmation) {
     elements.resetCompleteError.textContent = "As senhas n\u00e3o conferem.";
     return;
   }
 
   try {
-    const response = await fetch(`${API_PASSWORD_RESET_URL}/complete`, {
+    const response = await apiFetch(`${API_PASSWORD_RESET_URL}/complete`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ login: login.trim(), requestCode: requestCode.trim(), newPassword }),
     });
     const payload = await response.json().catch(() => ({}));
@@ -821,8 +805,12 @@ function showMasterTab(tabId) {
 function logout() {
   sessionStorage.removeItem(SESSION_KEY);
   currentSession = null;
-  masterCredential = null;
+  pendingUser = null;
   masterUsers = [];
+  passwordResetRequests = [];
+  accessLogs = [];
+  prices = [];
+  orders = [];
   masterDatabase = null;
   pendingOrdersAlertShown = false;
   document.querySelector(".pending-orders-modal")?.remove();
@@ -898,7 +886,7 @@ async function refreshOrders() {
 async function loadOrders(seedWhenEmpty = true) {
   if (location.protocol.startsWith("http")) {
     try {
-      const response = await fetch(API_ORDERS_URL, { cache: "no-store" });
+      const response = await apiFetch(API_ORDERS_URL);
       if (response.ok) {
         apiAvailable = true;
         const serverOrders = await response.json();
@@ -938,46 +926,6 @@ async function apiErrorMessage(response) {
   return `Erro ${response.status} ao comunicar com o servidor.`;
 }
 
-async function saveOrders() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(orders));
-
-  if (!apiAvailable) return;
-
-  try {
-    const response = await fetch(API_ORDERS_URL, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(orders),
-    });
-    apiAvailable = response.ok;
-  } catch {
-    apiAvailable = false;
-  }
-}
-
-async function saveOrder(order) {
-  orders = orders.some((item) => item.id === order.id)
-    ? orders.map((item) => (item.id === order.id ? { ...item, ...order } : item))
-    : [order, ...orders];
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(orders));
-
-  if (!apiAvailable) return order;
-
-  try {
-    const response = await fetch(API_ORDERS_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(order),
-    });
-    apiAvailable = response.ok;
-    if (response.ok) return await response.json();
-  } catch {
-    apiAvailable = false;
-  }
-
-  return order;
-}
-
 async function createOrder(order) {
   const fallbackOrder = { ...order, id: order.id || nextOrderId() };
 
@@ -991,13 +939,12 @@ async function createOrder(order) {
   }
 
   try {
-    const response = await fetch(API_ORDERS_URL, {
+    const response = await apiFetch(API_ORDERS_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(order),
     });
-    apiAvailable = response.ok;
     if (response.ok) {
+      apiAvailable = true;
       const savedOrder = await response.json();
       orders = [savedOrder, ...orders.filter((item) => item.id !== savedOrder.id)];
       localStorage.setItem(STORAGE_KEY, JSON.stringify(orders));
@@ -1005,7 +952,6 @@ async function createOrder(order) {
     }
     throw new Error(await apiErrorMessage(response));
   } catch (error) {
-    apiAvailable = false;
     if (location.protocol.startsWith("http")) throw error;
   }
 
@@ -1026,13 +972,12 @@ async function patchOrder(id, updates) {
   }
 
   try {
-    const response = await fetch(`${API_ORDERS_URL}/${encodeURIComponent(id)}`, {
+    const response = await apiFetch(`${API_ORDERS_URL}/${encodeURIComponent(id)}`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(updates),
     });
-    apiAvailable = response.ok;
     if (response.ok) {
+      apiAvailable = true;
       const savedOrder = await response.json();
       orders = orders.map((order) => (order.id === id ? savedOrder : order));
       localStorage.setItem(STORAGE_KEY, JSON.stringify(orders));
@@ -1040,7 +985,6 @@ async function patchOrder(id, updates) {
     }
     throw new Error(await apiErrorMessage(response));
   } catch (error) {
-    apiAvailable = false;
     if (location.protocol.startsWith("http")) throw error;
   }
 
@@ -1059,11 +1003,9 @@ async function removeOrder(id) {
   }
 
   try {
-    const response = await fetch(`${API_ORDERS_URL}/${encodeURIComponent(id)}`, { method: "DELETE" });
-    apiAvailable = response.ok;
+    const response = await apiFetch(`${API_ORDERS_URL}/${encodeURIComponent(id)}`, { method: "DELETE" });
     if (!response.ok) throw new Error(await apiErrorMessage(response));
   } catch (error) {
-    apiAvailable = false;
     if (location.protocol.startsWith("http")) throw error;
   }
 }
@@ -1071,9 +1013,8 @@ async function removeOrder(id) {
 async function logAccess(session, eventType = "login", details = {}) {
   if (!location.protocol.startsWith("http")) return;
   try {
-    await fetch(API_ACCESS_LOGS_URL, {
+    await apiFetch(API_ACCESS_LOGS_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         userName: session.name,
         login: session.login || session.name,
@@ -1094,11 +1035,12 @@ async function loadMasterData() {
   if (!isMasterUser()) return;
   try {
     const [logsResponse, pricesResponse, settingsResponse] = await Promise.all([
-      fetch(API_ACCESS_LOGS_URL, { cache: "no-store" }),
-      fetch(API_PRICES_URL, { cache: "no-store" }),
-      fetch(API_COST_SETTINGS_URL, { cache: "no-store" }),
+      apiFetch(API_ACCESS_LOGS_URL),
+      apiFetch(API_PRICES_URL),
+      apiFetch(API_COST_SETTINGS_URL),
     ]);
     if (logsResponse.ok) accessLogs = await logsResponse.json();
+    else console.warn(await apiErrorMessage(logsResponse));
     if (pricesResponse.ok) prices = await pricesResponse.json();
     if (settingsResponse.ok) costSettings = normalizeCostSettings(await settingsResponse.json());
   } catch (error) {
@@ -1110,7 +1052,7 @@ async function loadMasterData() {
 }
 
 async function loadMasterUsers(shouldRender = true) {
-  if (!isMasterUser() || !masterCredential) {
+  if (!isMasterUser()) {
     if (elements.masterUsersBody) {
       elements.masterUsersBody.innerHTML = '<tr><td colspan="9">Entre novamente como Master para carregar os usu\u00e1rios.</td></tr>';
     }
@@ -1118,12 +1060,11 @@ async function loadMasterUsers(shouldRender = true) {
   }
 
   try {
-    const response = await fetch("/api/users/admin-list", {
+    const response = await apiFetch("/api/users/admin-list", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ master: masterCredential }),
+      body: JSON.stringify({}),
     });
-    const payload = await response.json();
+    const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || "N\u00e3o foi poss\u00edvel carregar usu\u00e1rios.");
     masterUsers = Array.isArray(payload.users) ? payload.users : [];
     if (shouldRender) renderMasterPanel();
@@ -1136,7 +1077,7 @@ async function loadMasterUsers(shouldRender = true) {
 }
 
 async function loadPasswordResetRequests(shouldRender = true) {
-  if (!isMasterUser() || !masterCredential) {
+  if (!isMasterUser()) {
     if (elements.passwordResetRequestsBody) {
       elements.passwordResetRequestsBody.innerHTML = '<tr><td colspan="6">Entre novamente como Master para carregar as solicita\u00e7\u00f5es.</td></tr>';
     }
@@ -1144,10 +1085,9 @@ async function loadPasswordResetRequests(shouldRender = true) {
   }
 
   try {
-    const response = await fetch(`${API_PASSWORD_RESET_URL}/admin-list`, {
+    const response = await apiFetch(`${API_PASSWORD_RESET_URL}/admin-list`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ master: masterCredential }),
+      body: JSON.stringify({}),
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || "N\u00e3o foi poss\u00edvel carregar solicita\u00e7\u00f5es.");
@@ -1162,18 +1102,17 @@ async function loadPasswordResetRequests(shouldRender = true) {
 }
 
 async function loadMasterDatabase() {
-  if (!isMasterUser() || !masterCredential) {
+  if (!isMasterUser()) {
     renderDatabaseAccessMessage("Entre novamente como Master para acessar a base de dados.");
     return;
   }
 
   try {
-    const response = await fetch("/api/admin/database", {
+    const response = await apiFetch("/api/admin/database", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ master: masterCredential }),
+      body: JSON.stringify({}),
     });
-    const payload = await response.json();
+    const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || "N\u00e3o foi poss\u00edvel carregar a base de dados.");
     masterDatabase = payload.database;
     renderDatabaseSummary();
@@ -1288,11 +1227,11 @@ function exportMasterDatabase() {
 }
 
 async function loadCostData() {
-  if (!location.protocol.startsWith("http")) return;
+  if (!location.protocol.startsWith("http") || !currentSession?.token) return;
   try {
     const [pricesResponse, settingsResponse] = await Promise.all([
-      fetch(API_PRICES_URL, { cache: "no-store" }),
-      fetch(API_COST_SETTINGS_URL, { cache: "no-store" }),
+      apiFetch(API_PRICES_URL),
+      apiFetch(API_COST_SETTINGS_URL),
     ]);
     if (pricesResponse.ok) prices = await pricesResponse.json();
     if (settingsResponse.ok) costSettings = normalizeCostSettings(await settingsResponse.json());
@@ -1302,18 +1241,16 @@ async function loadCostData() {
 }
 
 async function savePrices() {
-  const response = await fetch(API_PRICES_URL, {
+  const response = await apiFetch(API_PRICES_URL, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(prices),
   });
   if (!response.ok) throw new Error(await apiErrorMessage(response));
 }
 
 async function saveCostSettings() {
-  const response = await fetch(API_COST_SETTINGS_URL, {
+  const response = await apiFetch(API_COST_SETTINGS_URL, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(costSettings),
   });
   if (!response.ok) throw new Error(await apiErrorMessage(response));
@@ -2175,6 +2112,8 @@ function renderAccessLogs() {
 function accessEventLabel(eventType) {
   const labels = {
     login: "Login",
+    login_falha: "Falha de login",
+    evento_cliente: "Evento do aplicativo",
     alerta_nome_celular: "Nome diferente no celular",
     senha_provisoria: "Senha provis\u00f3ria",
     usuario_gestao_criado: "Usu\u00e1rio Gest\u00e3o criado",
@@ -2214,11 +2153,6 @@ function renderOrderHistory(historyRows) {
 function renderMasterUsers() {
   if (!elements.masterUsersBody) return;
   elements.masterUsersBody.innerHTML = "";
-
-  if (!masterCredential) {
-    elements.masterUsersBody.innerHTML = '<tr><td colspan="9">Entre novamente como Master para liberar a administra\u00e7\u00e3o de usu\u00e1rios.</td></tr>';
-    return;
-  }
 
   if (!masterUsers.length) {
     elements.masterUsersBody.innerHTML = '<tr><td colspan="9">Nenhum usu\u00e1rio cadastrado.</td></tr>';
@@ -2283,13 +2217,9 @@ function renderPasswordResetRequests() {
   if (!elements.passwordResetRequestsBody) return;
   elements.passwordResetRequestsBody.innerHTML = "";
 
-  if (!masterCredential) {
-    elements.passwordResetRequestsBody.innerHTML =
-      '<tr><td colspan="6">Entre novamente como Master para liberar as solicita\u00e7\u00f5es.</td></tr>';
-    return;
-  }
-
-  const pendingRequests = passwordResetRequests.filter((request) => request.status === "PENDENTE");
+  const pendingRequests = passwordResetRequests.filter(
+    (request) => request.status === "PENDENTE" || (request.status === "APROVADO" && request.code)
+  );
   if (!pendingRequests.length) {
     elements.passwordResetRequestsBody.innerHTML =
       '<tr><td colspan="6">Nenhuma solicita\u00e7\u00e3o aguardando aprova\u00e7\u00e3o.</td></tr>';
@@ -2317,7 +2247,12 @@ function renderPasswordResetRequests() {
                   <button class="ghost-button small" type="button" data-reset-request="${request.id}" data-reset-decision="APROVADO">Aprovar</button>
                   <button class="ghost-button small danger" type="button" data-reset-request="${request.id}" data-reset-decision="RECUSADO">Recusar</button>
                 </div>`
-              : "-"
+              : request.code
+                ? `<div class="inline-actions">
+                    <strong data-reset-code></strong>
+                    ${request.phone ? `<button class="ghost-button small" type="button" data-reset-whatsapp>WhatsApp</button>` : "<span>Sem celular cadastrado</span>"}
+                  </div>`
+                : "-"
           }
         </td>
       `;
@@ -2325,6 +2260,9 @@ function renderPasswordResetRequests() {
       row.querySelectorAll("[data-reset-decision]").forEach((button) => {
         button.addEventListener("click", () => decidePasswordReset(button.dataset.resetRequest, button.dataset.resetDecision));
       });
+      const codeElement = row.querySelector("[data-reset-code]");
+      if (codeElement) codeElement.textContent = request.code;
+      row.querySelector("[data-reset-whatsapp]")?.addEventListener("click", () => sendPasswordResetCode(request));
       elements.passwordResetRequestsBody.append(row);
     });
 }
@@ -2340,15 +2278,29 @@ function passwordResetStatusLabel(status) {
   return labels[status] || status || "-";
 }
 
+function passwordResetWhatsappUrl(request) {
+  const message = [
+    `Ol\u00e1, ${request.userName || request.login}!`,
+    "Seu pedido de redefini\u00e7\u00e3o de senha do sistema de Solicita\u00e7\u00e3o de Acess\u00f3rios VERI foi aprovado.",
+    `Usu\u00e1rio: ${request.login}`,
+    `C\u00f3digo: ${request.code}`,
+    `Use em "Esqueci minha senha" > "J\u00e1 tenho autoriza\u00e7\u00e3o". O c\u00f3digo vale at\u00e9 ${request.expiresAt ? formatDateTime(request.expiresAt) : "30 minutos"}.`,
+  ].join("\n");
+  return `https://wa.me/${phoneForWhatsapp(request.phone)}?text=${encodeURIComponent(message)}`;
+}
+
+function sendPasswordResetCode(request) {
+  if (!request?.code || !request.phone) return;
+  openExternalLink(passwordResetWhatsappUrl(request));
+}
+
 async function decidePasswordReset(requestId, decision) {
-  if (!isMasterUser() || !masterCredential || !requestId || !decision) return;
+  if (!isMasterUser() || !requestId || !decision) return;
 
   try {
-    const response = await fetch(`${API_PASSWORD_RESET_URL}/admin-decision`, {
+    const response = await apiFetch(`${API_PASSWORD_RESET_URL}/admin-decision`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        master: masterCredential,
         id: requestId,
         requestId,
         decision,
@@ -2359,36 +2311,42 @@ async function decidePasswordReset(requestId, decision) {
 
     passwordResetRequests = passwordResetRequests.map((item) => (item.id === payload.request.id ? payload.request : item));
     renderPasswordResetRequests();
-    alert(decision === "APROVADO" ? "Solicita\u00e7\u00e3o aprovada. O usu\u00e1rio j\u00e1 pode redefinir a pr\u00f3pria senha." : "Solicita\u00e7\u00e3o recusada.");
+    if (decision !== "APROVADO") {
+      alert("Solicita\u00e7\u00e3o recusada.");
+    } else if (payload.request.code && payload.request.phone) {
+      if (confirm(`Solicita\u00e7\u00e3o aprovada.\n\nC\u00f3digo: ${payload.request.code}\n\nAbrir o WhatsApp para enviar o c\u00f3digo ao celular cadastrado do usu\u00e1rio?`)) {
+        sendPasswordResetCode(payload.request);
+      }
+    } else {
+      alert(`Solicita\u00e7\u00e3o aprovada.\n\nC\u00f3digo: ${payload.request.code || "-"}\n\nO usu\u00e1rio n\u00e3o tem celular cadastrado: envie o c\u00f3digo por outro canal seguro.`);
+    }
   } catch (error) {
     alert(error.message);
   }
 }
 
 async function resetUserPassword(login) {
-  if (!isMasterUser() || !masterCredential) return;
+  if (!isMasterUser()) return;
   const user = masterUsers.find((item) => item.login === login);
   const label = user?.name || login;
   const temporaryPassword = prompt(`Definir senha provis\u00f3ria para ${label}.\n\nO usu\u00e1rio precisar\u00e1 trocar a senha no pr\u00f3ximo acesso.`);
   if (temporaryPassword === null) return;
   const trimmedPassword = temporaryPassword.trim();
 
-  if (trimmedPassword.length < 4) {
-    alert("A senha provis\u00f3ria deve ter pelo menos 4 caracteres.");
+  if (trimmedPassword.length < PASSWORD_MIN_LENGTH) {
+    alert(`A senha provis\u00f3ria deve ter pelo menos ${PASSWORD_MIN_LENGTH} caracteres.`);
     return;
   }
 
   try {
-    const response = await fetch("/api/users/admin-password", {
+    const response = await apiFetch("/api/users/admin-password", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        master: masterCredential,
         login,
         newPassword: trimmedPassword,
       }),
     });
-    const payload = await response.json();
+    const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || "N\u00e3o foi poss\u00edvel redefinir a senha.");
     masterUsers = masterUsers.map((item) => (item.login === payload.user.login ? payload.user : item));
     renderMasterUsers();
@@ -2399,7 +2357,7 @@ async function resetUserPassword(login) {
 }
 
 async function editMasterUser(login) {
-  if (!isMasterUser() || !masterCredential) return;
+  if (!isMasterUser()) return;
   const user = masterUsers.find((item) => item.login === login);
   if (!user) return;
   setManagementUserFormMode(user);
@@ -2407,7 +2365,7 @@ async function editMasterUser(login) {
 }
 
 async function toggleMasterUserStatus(login) {
-  if (!isMasterUser() || !masterCredential) return;
+  if (!isMasterUser()) return;
   const user = masterUsers.find((item) => item.login === login);
   if (!user) return;
   const nextActive = user.active === false;
@@ -2415,11 +2373,9 @@ async function toggleMasterUserStatus(login) {
   if (!confirm(`Confirmar ${action} o usu\u00e1rio ${user.name || login}?`)) return;
 
   try {
-    const response = await fetch("/api/users/admin-status", {
+    const response = await apiFetch("/api/users/admin-status", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        master: masterCredential,
         login,
         active: nextActive,
       }),
@@ -2435,17 +2391,15 @@ async function toggleMasterUserStatus(login) {
 }
 
 async function deleteMasterUser(login) {
-  if (!isMasterUser() || !masterCredential) return;
+  if (!isMasterUser()) return;
   const user = masterUsers.find((item) => item.login === login);
   if (!user) return;
   if (!confirm(`Excluir definitivamente o usu\u00e1rio ${user.name || login}?`)) return;
 
   try {
-    const response = await fetch("/api/users/admin-delete", {
+    const response = await apiFetch("/api/users/admin-delete", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        master: masterCredential,
         login,
       }),
     });
@@ -2461,7 +2415,7 @@ async function deleteMasterUser(login) {
 
 async function handleManagementUserSubmit(event) {
   event.preventDefault();
-  if (!isMasterUser() || !masterCredential) return;
+  if (!isMasterUser()) return;
 
   const role = elements.managementUserRole.value;
   const login = elements.managementUserLogin.value.trim();
@@ -2476,17 +2430,15 @@ async function handleManagementUserSubmit(event) {
     return;
   }
 
-  if (!wasEditing && password.length < 4) {
-    alert("A senha padr\u00e3o deve ter pelo menos 4 caracteres.");
+  if (!wasEditing && password.length < PASSWORD_MIN_LENGTH) {
+    alert(`A senha padr\u00e3o deve ter pelo menos ${PASSWORD_MIN_LENGTH} caracteres.`);
     return;
   }
 
   try {
-    const response = await fetch(wasEditing ? "/api/users/admin-update" : "/api/users/management", {
+    const response = await apiFetch(wasEditing ? "/api/users/admin-update" : "/api/users/management", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        master: masterCredential,
         role,
         login,
         name,
@@ -2495,7 +2447,7 @@ async function handleManagementUserSubmit(event) {
         password,
       }),
     });
-    const payload = await response.json();
+    const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || (wasEditing ? "N\u00e3o foi poss\u00edvel editar o usu\u00e1rio." : "N\u00e3o foi poss\u00edvel criar o usu\u00e1rio."));
     resetManagementUserFormMode();
     masterUsers = [payload.user, ...masterUsers.filter((item) => item.login !== payload.user.login)];
@@ -3871,18 +3823,21 @@ function exportCsv() {
   downloadUrl(url, "pedidos-pecas-fabrica.csv", true);
 }
 
-function exportXlsx() {
+async function exportXlsx() {
   const params = new URLSearchParams({
     search: elements.reportSearchInput.value.trim(),
     status: elements.reportFilterStatus.value,
     priority: elements.reportFilterPriority.value,
   });
 
-  if (!isInternalUser()) {
-    params.set("phone", currentSession.phone || "");
+  try {
+    const response = await apiFetch(`/api/report.xlsx?${params.toString()}`);
+    if (!response.ok) throw new Error(await apiErrorMessage(response));
+    const blob = await response.blob();
+    downloadUrl(URL.createObjectURL(blob), "relatorio-pedidos-veri.xlsx", true);
+  } catch (error) {
+    alert(`N\u00e3o foi poss\u00edvel gerar o relat\u00f3rio.\n\n${error.message}`);
   }
-
-  downloadUrl(`/api/report.xlsx?${params.toString()}`, "relatorio-pedidos-veri.xlsx");
 }
 
 function downloadUrl(url, filename, revokeAfterClick = false) {
