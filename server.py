@@ -21,6 +21,17 @@ COST_SETTINGS_FILE = ROOT / "cost_settings.json"
 USERS_FILE = ROOT / "users.json"
 PASSWORD_RESETS_FILE = ROOT / "password_resets.json"
 LOCK = Lock()
+# Só estes arquivos são servidos pela web; o resto da pasta (dados, código, .git) fica fechado.
+PUBLIC_FILES = {
+    "/",
+    "/index.html",
+    "/app.js",
+    "/styles.css",
+    "/logo-veri.png",
+    "/logo-veri-white.png",
+    "/logo-veri-original.jpg",
+    "/favicon.ico",
+}
 
 
 def load_env_file():
@@ -119,7 +130,20 @@ class RequestHandler(SimpleHTTPRequestHandler):
                 self.send_json({"ok": False, "error": str(exc)}, status=503)
             return
 
+        if parsed.path not in PUBLIC_FILES:
+            self.send_error(404)
+            return
         super().do_GET()
+
+    def do_HEAD(self):
+        if urlparse(self.path).path not in PUBLIC_FILES:
+            self.send_error(404)
+            return
+        super().do_HEAD()
+
+    def list_directory(self, path):
+        self.send_error(404)
+        return None
 
     def do_PUT(self):
         if self.path == "/api/orders":

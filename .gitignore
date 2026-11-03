@@ -2,5 +2,10 @@
 __pycache__/
 *.pyc
 
-# pedidos de teste locais
+# dados locais (modo sem Supabase)
+users.json
 orders.json
+prices.json
+cost_settings.json
+password_resets.json
+access_logs.json
