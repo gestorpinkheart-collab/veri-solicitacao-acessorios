@@ -789,6 +789,7 @@ def create_order(order, user):
 def notify_new_order(order):
     """Dispara o alerta de pedido novo em segundo plano; falha no e-mail nunca afeta o pedido."""
     if not RESEND_API_KEY or not ALERT_EMAIL_FROM:
+        log_error(f"Alerta de pedido {order.get('id', '')} não enviado: RESEND_API_KEY ou ALERT_EMAIL_FROM ausente.")
         return
     Thread(target=send_new_order_alert, args=(dict(order),), daemon=True).start()
 
@@ -808,6 +809,7 @@ def send_new_order_alert(order):
     try:
         recipients = new_order_alert_recipients()
         if not recipients:
+            log_error(f"Alerta de pedido {order.get('id', '')} não enviado: nenhum Master/Gestão ativo com e-mail cadastrado.")
             return
         order_id = str(order.get("id", ""))
         urgent = order.get("priority") == "Urgente"
@@ -2919,6 +2921,10 @@ if __name__ == "__main__":
     if not environ.get("SESSION_SECRET", "").strip() and not SUPABASE_SERVICE_ROLE_KEY:
         log_error("SESSION_SECRET não definido (modo local): as sessões valem só enquanto este processo estiver no ar.")
     ensure_default_users()
+    log_error(
+        "Alerta de pedido por e-mail: "
+        + (f"ligado (remetente {ALERT_EMAIL_FROM})." if RESEND_API_KEY and ALERT_EMAIL_FROM else "desligado (falta RESEND_API_KEY ou ALERT_EMAIL_FROM).")
+    )
     server = ThreadingHTTPServer(("0.0.0.0", port), RequestHandler)
     print(f"Sistema disponível em http://0.0.0.0:{port}/index.html", flush=True)
     server.serve_forever()
