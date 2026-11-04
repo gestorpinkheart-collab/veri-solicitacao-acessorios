@@ -1613,7 +1613,7 @@ async function editOrder(id) {
   elements.itemsList.innerHTML = "";
   order.items.forEach((item) => addItemRow(item));
   showView("requestView");
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  window.scrollTo({ top: 0, behavior: scrollBehavior() });
 }
 
 async function deleteOrder(id) {
@@ -1918,7 +1918,7 @@ function openPendingOrdersQueue() {
   elements.filterStatus.value = "";
   elements.filterPriority.value = "";
   renderOrders();
-  elements.pendingOrdersNotice?.scrollIntoView({ behavior: "smooth", block: "start" });
+  elements.pendingOrdersNotice?.scrollIntoView({ behavior: scrollBehavior(), block: "start" });
 }
 
 function renderMasterPanel() {
@@ -2298,7 +2298,7 @@ async function editMasterUser(login) {
   const user = masterUsers.find((item) => item.login === login);
   if (!user) return;
   setManagementUserFormMode(user);
-  elements.managementUserForm?.scrollIntoView({ behavior: "smooth", block: "center" });
+  elements.managementUserForm?.scrollIntoView({ behavior: scrollBehavior(), block: "center" });
 }
 
 async function toggleMasterUserStatus(login) {
@@ -2497,6 +2497,10 @@ function orderSortByStatus(a, b) {
   return String(a.id || "").localeCompare(String(b.id || ""));
 }
 
+function scrollBehavior() {
+  return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+}
+
 function statusClass(status) {
   const currentStatus = normalizeStatus(status);
   if (currentStatus === "Pedido Recebido") return "order-received";
@@ -2567,7 +2571,7 @@ function applyStatusWidgetFilter(status) {
   if (!elements.filterStatus || !status) return;
   elements.filterStatus.value = elements.filterStatus.value === status ? "" : status;
   render();
-  elements.ordersList?.scrollIntoView({ behavior: "smooth", block: "start" });
+  elements.ordersList?.scrollIntoView({ behavior: scrollBehavior(), block: "start" });
 }
 
 function renderCharts() {
@@ -2588,11 +2592,13 @@ function renderPieChart(container, data) {
   }
 
   let cursor = 0;
-  const colors = ["#2f4d40", "#c9a24a", "#527e86", "#7a8bb1"];
+  const palette = ["#2c3f37", "#b08d57", "#92aca0", "#7b66a6"];
+  const fixedColors = { Normal: "#2c3f37", Urgente: "#c0623f" };
+  const colors = entries.map(([label], index) => fixedColors[label] || palette[index % palette.length]);
   const segments = entries.map(([label, value], index) => {
     const start = cursor;
     cursor += (value / total) * 100;
-    return `${colors[index % colors.length]} ${start}% ${cursor}%`;
+    return `${colors[index]} ${start}% ${cursor}%`;
   });
 
   const chart = document.createElement("div");
@@ -2603,7 +2609,7 @@ function renderPieChart(container, data) {
   legend.className = "chart-legend";
   legend.innerHTML = entries
     .map(([label, value], index) => `
-      <span><i style="background:${colors[index % colors.length]}"></i>${escapeHtml(label)}: <strong>${value}</strong></span>
+      <span><i style="background:${colors[index]}"></i>${escapeHtml(label)}: <strong>${value}</strong></span>
     `)
     .join("");
 
@@ -2903,19 +2909,20 @@ function printManagementOrders(type) {
           @page { size: A4 landscape; margin: 7mm; }
           * { box-sizing: border-box; }
           html, body { width: 100%; margin: 0; padding: 0; }
-          body { font-family: Arial, sans-serif; color: #1d2b26; overflow: hidden; }
+          body { font-family: Arial, Helvetica, sans-serif; color: #1f2e28; overflow: hidden; }
           .sheet { width: 100%; max-width: 283mm; margin: 0 auto; overflow: hidden; }
-          header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #92ACA0; padding-bottom: 10px; margin-bottom: 12px; }
+          header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 1.5px solid #1f2e28; padding-bottom: 8px; margin-bottom: 12px; position: relative; }
+          header::after { content: ""; position: absolute; left: 0; bottom: -4px; width: 48px; height: 2px; background: #b08d57; }
           .print-logo { display: block; width: 84px; max-height: 34px; object-fit: contain; object-position: left center; margin-bottom: 3px; }
-          h1 { font-size: 14px; margin: 3px 0 0; text-transform: uppercase; }
-          .printed-at { font-size: 9px; color: #597066; white-space: nowrap; }
+          h1 { font-family: Georgia, "Times New Roman", serif; font-size: 17px; font-weight: 400; margin: 4px 0 0; }
+          .printed-at { font-size: 9px; color: #55625b; white-space: nowrap; letter-spacing: 0.04em; }
           .summary { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
-          .summary span { border: 1px solid #d5e0db; border-radius: 7px; padding: 6px 8px; font-size: 9.5px; font-weight: 700; }
+          .summary span { border: 1px solid #d9d1c2; border-radius: 6px; padding: 5px 8px; font-size: 9.5px; font-weight: 700; }
           table { width: 100%; max-width: 100%; border-collapse: collapse; table-layout: fixed; font-size: ${isAnalytical ? "7.6px" : "8.4px"}; }
-          th, td { border-bottom: 1px solid #d5e0db; padding: 4px 5px; text-align: left; vertical-align: top; line-height: 1.22; }
-          th { background: #edf3f0; color: #2f4d40; text-transform: uppercase; font-size: 7.6px; }
+          th, td { border-bottom: 1px solid #d9d1c2; padding: 4px 5px; text-align: left; vertical-align: top; line-height: 1.22; }
+          th { background: #f1ece2; color: #1f2e28; text-transform: uppercase; letter-spacing: 0.06em; font-size: 7.4px; border-bottom: 1px solid #1f2e28; }
           td { overflow-wrap: anywhere; word-break: break-word; }
-          td span { color: #597066; }
+          td span { color: #55625b; }
           th:nth-child(1), td:nth-child(1) { width: 17%; }
           th:nth-child(2), td:nth-child(2) { width: 18%; }
           th:nth-child(3), td:nth-child(3) { width: 14%; }
@@ -3089,27 +3096,27 @@ function printGalvanoplastyProtocol(id) {
         <style>
           @page { size: A4 portrait; margin: 8mm; }
           * { box-sizing: border-box; }
-          body { font-family: Arial, sans-serif; color: #1d2b26; margin: 0; }
-          .copy { height: 136mm; padding: 7mm; border: 1px solid #92ACA0; overflow: hidden; page-break-inside: avoid; }
+          body { font-family: Arial, Helvetica, sans-serif; color: #1f2e28; margin: 0; }
+          .copy { height: 136mm; padding: 7mm; border: 1px solid #1f2e28; border-radius: 2mm; overflow: hidden; page-break-inside: avoid; }
           .copy + .copy { margin-top: 5mm; }
-          header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #92ACA0; padding-bottom: 4mm; margin-bottom: 4mm; }
+          header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 1.5px solid #1f2e28; padding-bottom: 3mm; margin-bottom: 4mm; }
           .print-logo { display: block; width: 76px; max-height: 30px; object-fit: contain; object-position: left center; margin-bottom: 2mm; }
-          h1 { font-size: 13px; margin: 2mm 0 0; text-transform: uppercase; }
-          header span { font-size: 13px; font-weight: 700; background: #e8f0ec; border-radius: 999px; padding: 7px 12px; }
+          h1 { font-family: Georgia, "Times New Roman", serif; font-size: 15px; font-weight: 400; margin: 2mm 0 0; }
+          header span { font-size: 12px; font-weight: 700; border: 1.5px solid #1f2e28; border-radius: 999px; padding: 6px 12px; letter-spacing: 0.04em; text-transform: uppercase; }
           .meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2.5mm; margin-bottom: 3mm; font-size: 10px; }
-          .meta span, .totals span { border: 1px solid #d5e0db; border-radius: 6px; padding: 5px; min-height: 28px; }
-          .meta strong { display: block; font-size: 9px; color: #597066; text-transform: uppercase; margin-bottom: 2px; }
+          .meta span, .totals span { border: 1px solid #d9d1c2; border-radius: 5px; padding: 5px; min-height: 28px; }
+          .meta strong { display: block; font-size: 8.5px; color: #55625b; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 2px; }
           .totals { display: grid; grid-template-columns: repeat(4, 1fr); gap: 2.5mm; margin-bottom: 4mm; font-size: 11px; font-weight: 700; }
-          .totals strong { display: block; font-size: 9px; color: #597066; text-transform: uppercase; margin-bottom: 2px; }
+          .totals strong { display: block; font-size: 8.5px; color: #55625b; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 2px; }
           table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 10px; }
-          th, td { border-bottom: 1px solid #d5e0db; padding: 4px 5px; text-align: left; }
+          th, td { border-bottom: 1px solid #d9d1c2; padding: 4px 5px; text-align: left; }
           td { overflow-wrap: anywhere; word-break: break-word; }
-          th { background: #edf3f0; font-size: 9px; text-transform: uppercase; }
+          th { background: #f1ece2; font-size: 8.5px; text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid #1f2e28; }
           th:nth-child(2), td:nth-child(2) { width: 32mm; }
           th:last-child, td:last-child { text-align: right; width: 22mm; }
-          .note { font-size: 9.5px; color: #597066; margin: 4mm 0 0; }
+          .note { font-size: 9.5px; color: #55625b; margin: 4mm 0 0; }
           .signatures { display: grid; grid-template-columns: 1fr 1fr; gap: 15mm; margin-top: 10mm; font-size: 10px; }
-          .line { border-top: 1px solid #1d2b26; padding-top: 5px; }
+          .line { border-top: 1px solid #1f2e28; padding-top: 5px; }
         </style>
       </head>
       <body>
@@ -3163,19 +3170,22 @@ function printCollaboratorOrder(id) {
         <style>
           @page { size: A4 portrait; margin: 10mm; }
           * { box-sizing: border-box; }
-          body { font-family: Arial, sans-serif; color: #1d2b26; margin: 0; }
-          .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #92ACA0; padding-bottom: 12px; margin-bottom: 16px; }
+          body { font-family: Arial, Helvetica, sans-serif; color: #1f2e28; margin: 0; }
+          .header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 1.5px solid #1f2e28; padding-bottom: 10px; margin-bottom: 16px; position: relative; }
+          .header::after { content: ""; position: absolute; left: 0; bottom: -4px; width: 56px; height: 2px; background: #b08d57; }
           .print-logo { display: block; width: 90px; max-height: 40px; object-fit: contain; object-position: right center; }
-          h1 { font-size: 20px; margin: 0 0 6px; }
+          h1 { font-family: Georgia, "Times New Roman", serif; font-size: 22px; font-weight: 400; margin: 0 0 4px; }
+          .header p { color: #55625b; font-size: 11px; }
           p { margin: 4px 0; }
           .meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 12px 0; }
-          .meta span { border: 1px solid #d5e0db; border-radius: 8px; padding: 8px; }
+          .meta span { border: 1px solid #d9d1c2; border-radius: 6px; padding: 8px; font-size: 12px; }
+          .meta strong { font-size: 9px; color: #55625b; text-transform: uppercase; letter-spacing: 0.06em; }
           table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 12px; }
-          th, td { border-bottom: 1px solid #d5e0db; padding: 8px; text-align: left; }
+          th, td { border-bottom: 1px solid #d9d1c2; padding: 8px; text-align: left; }
           td { overflow-wrap: anywhere; word-break: break-word; }
-          th { background: #edf3f0; }
+          th { background: #f1ece2; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid #1f2e28; }
           .sign { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; margin-top: 34px; }
-          .line { border-top: 1px solid #1d2b26; padding-top: 6px; }
+          .line { border-top: 1px solid #1f2e28; padding-top: 6px; }
         </style>
       </head>
       <body>
@@ -3252,7 +3262,7 @@ function cloneOrder(id) {
   order.items.forEach((item) => addItemRow({ model: item.model, size: item.size, bath: item.bath, quantity: item.quantity }));
   if (!order.items.length) addItemRow();
   showView("requestView");
-  window.scrollTo({ top: 0, behavior: "smooth" });
+  window.scrollTo({ top: 0, behavior: scrollBehavior() });
 }
 
 function canManageOrder(order) {
