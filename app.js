@@ -83,14 +83,13 @@ const sampleOrders = [
   },
 ];
 
-const today = new Date();
-const todayIso = toIsoDate(today);
 let orders = [];
 let accessLogs = [];
 let prices = [];
 let costSettings = { goldValue: 800, rhodiumValue: 2500, rhodiumFactor: 0.7 };
 let currentSession = loadSession();
-let apiAvailable = false;
+let lastOrdersSignature = "";
+let pendingWhatsappFinish = null;
 let masterUsers = [];
 let passwordResetRequests = [];
 let masterDatabase = null;
@@ -115,8 +114,6 @@ const elements = {
   masterLoginTab: document.querySelector("#masterLoginTab"),
   commonLoginFields: document.querySelector("#commonLoginFields"),
   internalLoginFields: document.querySelector("#internalLoginFields"),
-  loginName: document.querySelector("#loginName"),
-  loginPhone: document.querySelector("#loginPhone"),
   collaboratorLoginAccess: document.querySelector("#collaboratorLoginAccess"),
   collaboratorNewAccess: document.querySelector("#collaboratorNewAccess"),
   collaboratorLoginFields: document.querySelector("#collaboratorLoginFields"),
@@ -157,7 +154,6 @@ const elements = {
   submitOrderButtons: document.querySelectorAll(".submit-order-button"),
   editingId: document.querySelector("#editingId"),
   formTitle: document.querySelector("#formTitle"),
-  orderNumberPreview: document.querySelector("#orderNumberPreview"),
   requester: document.querySelector("#requester"),
   origin: document.querySelector("#origin"),
   priority: document.querySelector("#priority"),
@@ -197,7 +193,6 @@ const elements = {
   reportFilterStatus: document.querySelector("#reportFilterStatus"),
   reportFilterPriority: document.querySelector("#reportFilterPriority"),
   ordersList: document.querySelector("#ordersList"),
-  managementOrderDetail: document.querySelector("#managementOrderDetail"),
   collaboratorOrdersList: document.querySelector("#collaboratorOrdersList"),
   collaboratorOrderDetail: document.querySelector("#collaboratorOrderDetail"),
   refreshMyOrders: document.querySelector("#refreshMyOrders"),
@@ -214,7 +209,6 @@ const elements = {
   reportTotalOrders: document.querySelector("#reportTotalOrders"),
   reportOpenOrders: document.querySelector("#reportOpenOrders"),
   reportTotalPieces: document.querySelector("#reportTotalPieces"),
-  dashboardBody: document.querySelector("#dashboardBody"),
   refreshMasterData: document.querySelector("#refreshMasterData"),
   masterAccessCount: document.querySelector("#masterAccessCount"),
   masterOrderHistoryCount: document.querySelector("#masterOrderHistoryCount"),
@@ -272,9 +266,6 @@ async function init() {
   populateStatusOptions();
   populatePriceOptions();
   populateRegisterOriginOptions();
-  if (currentSession?.token) await loadSessionData(false);
-  applySessionState();
-
   elements.loginForm.addEventListener("submit", handleLogin);
   elements.resetRequestForm?.addEventListener("submit", submitPasswordResetRequest);
   elements.resetCompleteForm?.addEventListener("submit", submitAuthorizedPasswordReset);
@@ -313,7 +304,7 @@ async function init() {
   elements.reportSearchInput.addEventListener("input", renderReports);
   elements.reportFilterStatus.addEventListener("change", renderReports);
   elements.reportFilterPriority.addEventListener("change", renderReports);
-  elements.refreshMyOrders?.addEventListener("click", refreshOrders);
+  elements.refreshMyOrders?.addEventListener("click", () => refreshOrders(true));
   elements.refreshMasterData?.addEventListener("click", loadMasterData);
   elements.refreshUsers?.addEventListener("click", loadMasterUsers);
   elements.refreshPasswordResets?.addEventListener("click", loadPasswordResetRequests);
@@ -335,19 +326,21 @@ async function init() {
   elements.viewButtons.forEach((button) => {
     button.addEventListener("click", () => showView(button.dataset.view));
   });
-  document.querySelector(".app-nav").addEventListener("click", (event) => {
-    const button = event.target.closest("[data-view]");
-    if (button) showView(button.dataset.view);
-  });
+  document.addEventListener("keydown", handleModalEscape);
+  window.addEventListener("beforeprint", renderReports);
   window.addEventListener("storage", (event) => {
-    if (event.key === STORAGE_KEY) {
-      loadOrders(false).then((nextOrders) => {
+    if (event.key !== STORAGE_KEY || !currentSession?.name) return;
+    loadOrders(false)
+      .then((nextOrders) => {
         orders = nextOrders;
         render();
-      });
-    }
+      })
+      .catch((error) => console.error(error));
   });
-  window.setInterval(refreshOrders, 4000);
+  // Listeners ficam prontos antes de esperar a rede, para o formulário não ser enviado nativamente.
+  if (currentSession?.token) await loadSessionData(false);
+  applySessionState();
+  window.setInterval(() => refreshOrders(), 4000);
 }
 
 function loadSession() {
@@ -418,34 +411,6 @@ async function handleLogin(event) {
   }
 
   await handleCollaboratorLogin();
-  return;
-
-  const name = elements.loginName.value.trim();
-  const phone = normalizeLoginPhone(elements.loginPhone.value);
-
-  if (!name) {
-    showLoginError("Informe o nome do solicitante.");
-    return;
-  }
-
-  if (!isValidBrazilMobile(phone)) {
-    showLoginError("Informe um celular v\u00e1lido com DDD e 9 d\u00edgitos. Exemplo: (11) 99999-9999. Esse n\u00famero ser\u00e1 usado para avisos do WhatsApp.");
-    return;
-  }
-
-  const knownNames = await findKnownNamesForPhone(phone);
-  const differentNames = knownNames.filter((knownName) => normalizeText(knownName) !== normalizeText(name));
-  if (differentNames.length) {
-    const previousNames = differentNames.slice(0, 3).join(", ");
-    alert(`Aten\u00e7\u00e3o: este celular j\u00e1 possui hist\u00f3rico no sistema vinculado a: ${previousNames}.\n\nPara manter a consulta dos pedidos e os avisos por WhatsApp corretos, use sempre este mesmo n\u00famero quando for voc\u00ea realizando a solicita\u00e7\u00e3o.`);
-    await logAccess(
-      { name, phone, role: "collaborator", login: name },
-      "alerta_nome_celular",
-      { previousNames: differentNames, message: "Celular j\u00e1 utilizado com outro nome de colaborador." }
-    );
-  }
-
-  saveSession({ name, phone, role: "collaborator" });
 }
 
 async function handleCollaboratorLogin() {
@@ -594,26 +559,6 @@ async function authenticateInternalUser(login, password, role) {
   throw new Error(payload.error || `Erro ${response.status} ao entrar.`);
 }
 
-async function findKnownNamesForPhone(phone) {
-  const normalizedPhone = normalizePhone(phone);
-  let phoneOrders = orders.filter((order) => normalizePhone(order.phone) === normalizedPhone);
-
-  if (location.protocol.startsWith("http")) {
-    try {
-      const response = await apiFetch(`/api/status?phone=${encodeURIComponent(normalizedPhone)}`);
-      if (response.ok) {
-        const data = await response.json();
-        if (Array.isArray(data)) phoneOrders = data;
-      }
-    } catch {
-      // Use the locally loaded orders if the status endpoint is temporarily unavailable.
-    }
-  }
-
-  const names = phoneOrders.map((order) => order.requester).filter(Boolean);
-  return [...new Set(names)];
-}
-
 function showLoginError(message) {
   elements.loginError.textContent = message;
 }
@@ -628,8 +573,6 @@ function setLoginMode(mode) {
   elements.internalLoginFields.classList.toggle("active-login-mode", mode === "consultant" || mode === "master");
   elements.internalLogin.value = "";
   elements.masterPassword.value = "";
-  if (elements.loginName) elements.loginName.value = "";
-  if (elements.loginPhone) elements.loginPhone.value = "";
   if (mode === "common") setCollaboratorAccessMode(collaboratorAccessMode);
   elements.loginSubmitButton.textContent = mode === "common" && collaboratorAccessMode === "register" ? "Criar acesso" : "Entrar";
 }
@@ -795,8 +738,6 @@ function showView(viewId) {
   elements.viewButtons.forEach((button) => button.classList.toggle("active", button.dataset.view === viewId));
 }
 
-window.showView = showView;
-
 function showMasterTab(tabId) {
   elements.masterTabButtons.forEach((button) => button.classList.toggle("active", button.dataset.masterTab === tabId));
   elements.masterPanes.forEach((pane) => pane.classList.toggle("active-master-pane", pane.id === tabId));
@@ -816,7 +757,6 @@ function logout() {
   document.querySelector(".pending-orders-modal")?.remove();
   elements.loginError.textContent = "";
   elements.masterPassword.value = "";
-  if (elements.loginPhone) elements.loginPhone.value = "";
   elements.collaboratorPassword.value = "";
   elements.appShell.hidden = true;
   elements.passwordScreen.hidden = true;
@@ -872,32 +812,38 @@ function populatePriceSizeOptions(selectedSize = "") {
   elements.priceSize.value = selectedSize;
 }
 
-async function refreshOrders() {
-  if (!currentSession?.name || !apiAvailable) return;
+async function refreshOrders(force = false) {
+  if (!currentSession?.name || !location.protocol.startsWith("http")) return;
   try {
-    orders = await loadOrders(false);
-    render();
+    const nextOrders = await loadOrders(false);
+    orders = nextOrders;
+    const signature = JSON.stringify(nextOrders);
+    if (!force && signature === lastOrdersSignature) return;
+    // Adia o render enquanto o usuário interage; a assinatura antiga faz o próximo ciclo tentar de novo.
+    if (!force && isUserInteracting()) return;
+    lastOrdersSignature = signature;
+    render({ fromPolling: !force });
   } catch (error) {
-    apiAvailable = false;
+    // Falha de rede não trava o app: o próximo ciclo tenta de novo.
     console.error(error);
   }
 }
 
+function isUserInteracting() {
+  if (document.querySelector(".delivery-modal, .pending-orders-modal")) return true;
+  const active = document.activeElement;
+  if (!active || active === document.body) return false;
+  return Boolean(active.matches("input, select, textarea") || active.closest(".order-card"));
+}
+
 async function loadOrders(seedWhenEmpty = true) {
   if (location.protocol.startsWith("http")) {
-    try {
-      const response = await apiFetch(API_ORDERS_URL);
-      if (response.ok) {
-        apiAvailable = true;
-        const serverOrders = await response.json();
-        return Array.isArray(serverOrders) ? normalizeOrders(serverOrders) : [];
-      }
-      apiAvailable = false;
-      throw new Error(await apiErrorMessage(response));
-    } catch (error) {
-      apiAvailable = false;
-      throw error;
+    const response = await apiFetch(API_ORDERS_URL);
+    if (response.ok) {
+      const serverOrders = await response.json();
+      return Array.isArray(serverOrders) ? normalizeOrders(serverOrders) : [];
     }
+    throw new Error(await apiErrorMessage(response));
   }
 
   const localOrders = loadLocalOrders();
@@ -929,10 +875,7 @@ async function apiErrorMessage(response) {
 async function createOrder(order) {
   const fallbackOrder = { ...order, id: order.id || nextOrderId() };
 
-  if (!apiAvailable) {
-    if (location.protocol.startsWith("http")) {
-      throw new Error("API indispon\u00edvel. Confira a conex\u00e3o do Render com o Supabase.");
-    }
+  if (!location.protocol.startsWith("http")) {
     orders = [fallbackOrder, ...orders];
     localStorage.setItem(STORAGE_KEY, JSON.stringify(orders));
     return fallbackOrder;
@@ -944,7 +887,6 @@ async function createOrder(order) {
       body: JSON.stringify(order),
     });
     if (response.ok) {
-      apiAvailable = true;
       const savedOrder = await response.json();
       orders = [savedOrder, ...orders.filter((item) => item.id !== savedOrder.id)];
       localStorage.setItem(STORAGE_KEY, JSON.stringify(orders));
@@ -964,10 +906,7 @@ async function patchOrder(id, updates) {
   orders = orders.map((order) => (order.id === id ? { ...order, ...updates } : order));
   localStorage.setItem(STORAGE_KEY, JSON.stringify(orders));
 
-  if (!apiAvailable) {
-    if (location.protocol.startsWith("http")) {
-      throw new Error("API indispon\u00edvel. Confira a conex\u00e3o do Render com o Supabase.");
-    }
+  if (!location.protocol.startsWith("http")) {
     return orders.find((order) => order.id === id);
   }
 
@@ -977,7 +916,6 @@ async function patchOrder(id, updates) {
       body: JSON.stringify(updates),
     });
     if (response.ok) {
-      apiAvailable = true;
       const savedOrder = await response.json();
       orders = orders.map((order) => (order.id === id ? savedOrder : order));
       localStorage.setItem(STORAGE_KEY, JSON.stringify(orders));
@@ -995,10 +933,7 @@ async function removeOrder(id) {
   orders = orders.filter((order) => order.id !== id);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(orders));
 
-  if (!apiAvailable) {
-    if (location.protocol.startsWith("http")) {
-      throw new Error("API indispon\u00edvel. Confira a conex\u00e3o do Render com o Supabase.");
-    }
+  if (!location.protocol.startsWith("http")) {
     return;
   }
 
@@ -1048,6 +983,7 @@ async function loadMasterData() {
   }
   await loadMasterUsers(false);
   await loadPasswordResetRequests(false);
+  renderCostSettings();
   renderMasterPanel();
 }
 
@@ -1071,7 +1007,7 @@ async function loadMasterUsers(shouldRender = true) {
   } catch (error) {
     masterUsers = [];
     if (elements.masterUsersBody) {
-      elements.masterUsersBody.innerHTML = `<tr><td colspan="9">${error.message}</td></tr>`;
+      elements.masterUsersBody.innerHTML = `<tr><td colspan="9">${escapeHtml(error.message)}</td></tr>`;
     }
   }
 }
@@ -1096,7 +1032,7 @@ async function loadPasswordResetRequests(shouldRender = true) {
   } catch (error) {
     passwordResetRequests = [];
     if (elements.passwordResetRequestsBody) {
-      elements.passwordResetRequestsBody.innerHTML = `<tr><td colspan="6">${error.message}</td></tr>`;
+      elements.passwordResetRequestsBody.innerHTML = `<tr><td colspan="6">${escapeHtml(error.message)}</td></tr>`;
     }
   }
 }
@@ -1125,7 +1061,7 @@ async function loadMasterDatabase() {
 
 function renderDatabaseAccessMessage(message) {
   if (elements.databasePreviewHead) elements.databasePreviewHead.innerHTML = "";
-  if (elements.databasePreviewBody) elements.databasePreviewBody.innerHTML = `<tr><td>${message}</td></tr>`;
+  if (elements.databasePreviewBody) elements.databasePreviewBody.innerHTML = `<tr><td>${escapeHtml(message)}</td></tr>`;
 }
 
 function renderDatabaseSummary() {
@@ -1146,7 +1082,7 @@ function renderDatabasePreview() {
   const table = elements.databaseTableSelect?.value || "orders";
   const rows = databaseRows(table).slice(0, 80);
   const columns = databaseColumns(table);
-  elements.databasePreviewHead.innerHTML = `<tr>${columns.map((column) => `<th>${column.label}</th>`).join("")}</tr>`;
+  elements.databasePreviewHead.innerHTML = `<tr>${columns.map((column) => `<th>${escapeHtml(column.label)}</th>`).join("")}</tr>`;
   elements.databasePreviewBody.innerHTML = "";
 
   if (!rows.length) {
@@ -1156,7 +1092,7 @@ function renderDatabasePreview() {
 
   rows.forEach((row) => {
     const tr = document.createElement("tr");
-    tr.innerHTML = columns.map((column) => `<td>${formatDatabaseValue(row[column.key])}</td>`).join("");
+    tr.innerHTML = columns.map((column) => `<td>${escapeHtml(formatDatabaseValue(row[column.key]))}</td>`).join("");
     elements.databasePreviewBody.append(tr);
   });
 }
@@ -1223,7 +1159,7 @@ function exportMasterDatabase() {
   }
   const blob = new Blob([JSON.stringify(masterDatabase, null, 2)], { type: "application/json;charset=utf-8" });
   const url = URL.createObjectURL(blob);
-  downloadUrl(url, `veri-base-dados-${todayIso}.json`, true);
+  downloadUrl(url, `veri-base-dados-${todayIso()}.json`, true);
 }
 
 async function loadCostData() {
@@ -1304,17 +1240,6 @@ async function handlePriceSubmit(event) {
   }
 }
 
-async function deletePrice(index) {
-  if (!isMasterUser()) return;
-  prices.splice(index, 1);
-  try {
-    await savePrices();
-    renderMasterPanel();
-  } catch (error) {
-    alert(`N\u00e3o foi poss\u00edvel excluir o pre\u00e7o.\n\n${error.message}`);
-  }
-}
-
 async function deletePiecePrice(model, size) {
   if (!isMasterUser()) return;
   prices = prices.filter((price) => !(price.model === model && price.size === size));
@@ -1350,7 +1275,7 @@ async function handleSubmit(event) {
     const requester = isInternalUser() ? elements.requester.value.trim() : currentSession.name;
     const existingOrder = existingId ? orders.find((item) => item.id === existingId) : null;
     const pricedItems = enrichItemsForOrder(items, existingOrder);
-    const requestDate = existingOrder?.requestDate || todayIso;
+    const requestDate = existingOrder?.requestDate || todayIso();
     const order = {
       requestDate,
       requester,
@@ -1382,7 +1307,7 @@ async function handleSubmit(event) {
     if (currentSession.role === "collaborator") {
       alert(`Pedido ${savedOrder.id} finalizado com sucesso.`);
       resetForm();
-      await refreshOrders();
+      await refreshOrders(true);
       return;
     }
 
@@ -1454,7 +1379,7 @@ function recalculateExistingItemCost(item, existingItem) {
 function normalizeDeliveries(value) {
   return Array.isArray(value)
     ? value.map((delivery) => ({
-        id: delivery.id || `ENT-${Date.now()}`,
+        id: delivery.id || newDeliveryId(),
         at: delivery.at || "",
         user: repairText(delivery.user || ""),
         role: delivery.role || "",
@@ -1470,6 +1395,11 @@ function normalizeDeliveries(value) {
           : [],
       }))
     : [];
+}
+
+function newDeliveryId() {
+  const stamp = new Date().toISOString().replace(/\D/g, "").slice(0, 14);
+  return `ENT-${stamp}-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
 }
 
 function deliveredQuantityForItem(order, itemIndex) {
@@ -1540,18 +1470,6 @@ function calculateBathCost({ bath, weight, goldThousandth }) {
     return pieceWeight * Number(goldThousandth || 0) * Number(costSettings.goldValue || 0);
   }
   return 0;
-}
-
-function calculatePricePreview(price) {
-  const bathCost = calculateBathCost({
-    bath: price.bath,
-    weight: price.weight,
-    goldThousandth: price.goldThousandth,
-  });
-  return {
-    bathCost: roundCost(bathCost),
-    totalUnitCost: roundCost(Number(price.unitCost || 0) + bathCost),
-  };
 }
 
 function addItemRow(item = {}) {
@@ -1656,7 +1574,6 @@ function resetForm() {
   elements.form.reset();
   elements.editingId.value = "";
   elements.formTitle.textContent = "Carrinho da solicita\u00e7\u00e3o";
-  if (elements.orderNumberPreview) elements.orderNumberPreview.textContent = "";
   elements.requester.value = isInternalUser() ? "" : currentSession?.name || "";
   elements.requester.readOnly = !isInternalUser();
   if (!isInternalUser() && currentSession?.origin) elements.origin.value = currentSession.origin;
@@ -1685,7 +1602,6 @@ async function editOrder(id) {
 
   elements.editingId.value = order.id;
   elements.formTitle.textContent = "Editar pedido";
-  if (elements.orderNumberPreview) elements.orderNumberPreview.textContent = order.id;
   elements.requester.value = order.requester;
   if (order.origin && !origins.includes(order.origin)) {
     elements.origin.append(new Option(order.origin, order.origin));
@@ -1801,9 +1717,9 @@ function registerPartialDelivery(id) {
       <div class="panel-title-row">
         <div>
           <p class="eyebrow">Entrega do pedido</p>
-          <h2>${order.id}</h2>
+          <h2>${escapeHtml(order.id)}</h2>
         </div>
-        <button class="action-button" type="button" data-close-delivery title="Fechar" aria-label="Fechar">×</button>
+        <button class="action-button" type="button" data-close-delivery data-modal-close title="Fechar" aria-label="Fechar">×</button>
       </div>
       <div class="delivery-summary">
         <span><strong>${totals.total}</strong> solicitadas</span>
@@ -1819,7 +1735,7 @@ function registerPartialDelivery(id) {
             <label class="delivery-row ${pending ? "" : "done"}">
               <span>
                 <strong>Item ${index + 1}</strong>
-                ${item.model} · ${item.size} · ${item.bath}
+                ${escapeHtml(item.model)} · ${escapeHtml(item.size)} · ${escapeHtml(item.bath)}
                 <small>Solicitado: ${requested} · Entregue: ${delivered} · Pendente: ${pending}</small>
               </span>
               <input type="number" min="0" max="${pending}" step="1" value="0" ${pending ? "" : "disabled"} data-delivery-index="${index}" aria-label="Quantidade entregue do item ${index + 1}">
@@ -1841,6 +1757,7 @@ function registerPartialDelivery(id) {
   document.body.append(modal);
   modal.querySelectorAll("[data-close-delivery]").forEach((button) => button.addEventListener("click", () => modal.remove()));
   modal.querySelector("[data-save-delivery]")?.addEventListener("click", () => savePartialDelivery(order.id, modal));
+  focusModal(modal, "[data-delivery-index]:not([disabled])");
 }
 
 async function savePartialDelivery(id, modal) {
@@ -1870,7 +1787,7 @@ async function savePartialDelivery(id, modal) {
   const deliveries = [
     ...normalizeDeliveries(order.deliveries),
     {
-      id: `ENT-${new Date().toISOString().replace(/\D/g, "").slice(0, 14)}`,
+      id: newDeliveryId(),
       at: new Date().toISOString(),
       user: currentSession?.name || "Sistema",
       role: currentSession?.role || "",
@@ -1904,16 +1821,16 @@ async function savePartialDelivery(id, modal) {
   render();
 }
 
-function render() {
+function render({ fromPolling = false } = {}) {
   renderMetrics();
   renderStatusWidgets();
   renderPendingOrderIndicators();
   renderCharts();
   renderOrders();
-  renderDashboardTable();
-  renderReports();
+  // reportsView não tem botão no menu desde que a impressão foi para a Gestão; só é montada para Ctrl+P (beforeprint).
   renderCollaboratorOrders();
-  renderMasterPanel();
+  if (fromPolling) renderMasterOrderTables();
+  else renderMasterPanel();
   showPendingOrdersAlertOnEntry();
 }
 
@@ -1967,7 +1884,7 @@ function showPendingOrdersAlertOnEntry() {
         <span><strong>${summary.inProgress}</strong> em andamento</span>
       </div>
       <div class="login-actions pending-orders-alert-actions">
-        <button class="text-button" type="button" data-close-pending-alert>Agora não</button>
+        <button class="text-button" type="button" data-close-pending-alert data-modal-close>Agora não</button>
         <button class="primary-button" type="button" data-open-pending-alert>Ver pedidos pendentes</button>
       </div>
     </div>
@@ -1978,6 +1895,21 @@ function showPendingOrdersAlertOnEntry() {
     modal.remove();
     openPendingOrdersQueue();
   });
+  focusModal(modal, "[data-open-pending-alert]");
+}
+
+function focusModal(modal, selector) {
+  const target = modal.querySelector(selector) || modal.querySelector("button, input, textarea, select");
+  target?.focus();
+}
+
+function handleModalEscape(event) {
+  if (event.key !== "Escape") return;
+  const modals = document.querySelectorAll(".delivery-modal, .pending-orders-modal");
+  const modal = modals[modals.length - 1];
+  if (!modal) return;
+  event.preventDefault();
+  modal.querySelector("[data-modal-close]")?.click();
 }
 
 function openPendingOrdersQueue() {
@@ -1991,18 +1923,23 @@ function openPendingOrdersQueue() {
 
 function renderMasterPanel() {
   if (!isMasterUser() || !elements.masterCostBody) return;
-  const historyRows = getOrderHistoryRows();
+  renderMasterOrderTables();
   elements.masterAccessCount.textContent = accessLogs.length;
-  elements.masterOrderHistoryCount.textContent = historyRows.length;
-  renderCostSettings();
-  renderMasterCostDashboard();
   renderAccessLogs();
-  renderOrderHistory(historyRows);
   renderMasterUsers();
   renderPasswordResetRequests();
   renderDatabaseSummary();
   renderDatabasePreview();
   renderPrices();
+}
+
+// Tabelas do Master que dependem só dos pedidos (sem campos de formulário); seguras para o polling.
+function renderMasterOrderTables() {
+  if (!isMasterUser() || !elements.masterCostBody) return;
+  const historyRows = getOrderHistoryRows();
+  elements.masterOrderHistoryCount.textContent = historyRows.length;
+  renderMasterCostDashboard();
+  renderOrderHistory(historyRows);
 }
 
 function renderCostSettings() {
@@ -2030,11 +1967,11 @@ function renderMasterCostDashboard() {
   rows.forEach((row) => {
     const tr = document.createElement("tr");
     tr.innerHTML = `
-      <td>${row.id}</td>
-      <td>${formatDate(row.requestDate)}</td>
-      <td>${row.requester}</td>
-      <td>${row.origin}</td>
-      <td>${row.status}</td>
+      <td>${escapeHtml(row.id)}</td>
+      <td>${escapeHtml(formatDate(row.requestDate))}</td>
+      <td>${escapeHtml(row.requester)}</td>
+      <td>${escapeHtml(row.origin)}</td>
+      <td>${escapeHtml(row.status)}</td>
       <td>${row.pieces}</td>
       <td>${formatCostMoney(row.rawCost)}</td>
       <td>${formatCostMoney(row.bathCost)}</td>
@@ -2099,11 +2036,11 @@ function renderAccessLogs() {
   accessLogs.slice(0, 80).forEach((log) => {
     const row = document.createElement("tr");
     row.innerHTML = `
-      <td>${formatDateTime(log.createdAt)}</td>
-      <td>${log.userName || log.login || "Sem usu\u00e1rio"}</td>
-      <td>${roleLabel(log.role)}</td>
-      <td>${accessEventLabel(log.eventType)}</td>
-      <td>${log.origin || ""}</td>
+      <td>${escapeHtml(formatDateTime(log.createdAt))}</td>
+      <td>${escapeHtml(log.userName || log.login || "Sem usu\u00e1rio")}</td>
+      <td>${escapeHtml(roleLabel(log.role))}</td>
+      <td>${escapeHtml(accessEventLabel(log.eventType))}</td>
+      <td>${escapeHtml(log.origin || "")}</td>
     `;
     elements.accessLogsBody.append(row);
   });
@@ -2140,11 +2077,11 @@ function renderOrderHistory(historyRows) {
   historyRows.slice(0, 120).forEach((item) => {
     const row = document.createElement("tr");
     row.innerHTML = `
-      <td>${formatDateTime(item.at)}</td>
-      <td>${item.orderId}</td>
-      <td>${item.action}</td>
-      <td>${item.user}</td>
-      <td>${roleLabel(item.role)}</td>
+      <td>${escapeHtml(formatDateTime(item.at))}</td>
+      <td>${escapeHtml(item.orderId)}</td>
+      <td>${escapeHtml(item.action)}</td>
+      <td>${escapeHtml(item.user)}</td>
+      <td>${escapeHtml(roleLabel(item.role))}</td>
     `;
     elements.orderHistoryBody.append(row);
   });
@@ -2164,20 +2101,20 @@ function renderMasterUsers() {
     const needsChange = Boolean(user.mustChangePassword);
     const isActive = user.active !== false;
     row.innerHTML = `
-      <td>${user.login}</td>
-      <td>${user.name}</td>
-      <td>${roleLabel(user.role)}</td>
-      <td>${user.origin || ""}</td>
-      <td>${formatPhone(user.phone) || ""}</td>
-      <td>${formatDateTime(user.createdAt)}</td>
-      <td>${formatDateTime(user.updatedAt)}</td>
+      <td>${escapeHtml(user.login)}</td>
+      <td>${escapeHtml(user.name)}</td>
+      <td>${escapeHtml(roleLabel(user.role))}</td>
+      <td>${escapeHtml(user.origin || "")}</td>
+      <td>${escapeHtml(formatPhone(user.phone) || "")}</td>
+      <td>${escapeHtml(formatDateTime(user.createdAt))}</td>
+      <td>${escapeHtml(formatDateTime(user.updatedAt))}</td>
       <td><span class="pill ${!isActive || needsChange ? "urgent" : ""}">${!isActive ? "Inativo" : needsChange ? "Troca pendente" : "Ativo"}</span></td>
       <td>
         <div class="inline-actions">
-          <button class="ghost-button small" type="button" data-edit-user="${user.login}" title="Editar usu\u00e1rio">Editar</button>
-          <button class="ghost-button small" type="button" data-toggle-user="${user.login}" title="${isActive ? "Inativar usu\u00e1rio" : "Ativar usu\u00e1rio"}">${isActive ? "Inativar" : "Ativar"}</button>
-          <button class="ghost-button small" type="button" data-reset-user="${user.login}" title="Definir senha provis\u00f3ria">Senha</button>
-          <button class="ghost-button small danger" type="button" data-delete-user="${user.login}" title="Excluir usu\u00e1rio">Excluir</button>
+          <button class="ghost-button small" type="button" data-edit-user="${escapeHtml(user.login)}" title="Editar usu\u00e1rio">Editar</button>
+          <button class="ghost-button small" type="button" data-toggle-user="${escapeHtml(user.login)}" title="${isActive ? "Inativar usu\u00e1rio" : "Ativar usu\u00e1rio"}">${isActive ? "Inativar" : "Ativar"}</button>
+          <button class="ghost-button small" type="button" data-reset-user="${escapeHtml(user.login)}" title="Definir senha provis\u00f3ria">Senha</button>
+          <button class="ghost-button small danger" type="button" data-delete-user="${escapeHtml(user.login)}" title="Excluir usu\u00e1rio">Excluir</button>
         </div>
       </td>
     `;
@@ -2235,17 +2172,17 @@ function renderPasswordResetRequests() {
       const isPending = request.status === "PENDENTE";
       const row = document.createElement("tr");
       row.innerHTML = `
-        <td>${formatDateTime(request.createdAt)}</td>
-        <td><strong>${request.login || ""}</strong><br><span>${request.userName || ""}</span></td>
-        <td>${roleLabel(request.role)}</td>
-        <td><span class="pill ${isPending ? "urgent" : ""}">${passwordResetStatusLabel(request.status)}</span></td>
-        <td>${request.expiresAt ? formatDateTime(request.expiresAt) : "-"}</td>
+        <td>${escapeHtml(formatDateTime(request.createdAt))}</td>
+        <td><strong>${escapeHtml(request.login || "")}</strong><br><span>${escapeHtml(request.userName || "")}</span></td>
+        <td>${escapeHtml(roleLabel(request.role))}</td>
+        <td><span class="pill ${isPending ? "urgent" : ""}">${escapeHtml(passwordResetStatusLabel(request.status))}</span></td>
+        <td>${request.expiresAt ? escapeHtml(formatDateTime(request.expiresAt)) : "-"}</td>
         <td>
           ${
             isPending
               ? `<div class="inline-actions">
-                  <button class="ghost-button small" type="button" data-reset-request="${request.id}" data-reset-decision="APROVADO">Aprovar</button>
-                  <button class="ghost-button small danger" type="button" data-reset-request="${request.id}" data-reset-decision="RECUSADO">Recusar</button>
+                  <button class="ghost-button small" type="button" data-reset-request="${escapeHtml(request.id)}" data-reset-decision="APROVADO">Aprovar</button>
+                  <button class="ghost-button small danger" type="button" data-reset-request="${escapeHtml(request.id)}" data-reset-decision="RECUSADO">Recusar</button>
                 </div>`
               : request.code
                 ? `<div class="inline-actions">
@@ -2469,12 +2406,12 @@ function renderPrices() {
   piecePrices.forEach((price) => {
     const row = document.createElement("tr");
     row.innerHTML = `
-      <td>${price.model}</td>
-      <td>${price.size}</td>
+      <td>${escapeHtml(price.model)}</td>
+      <td>${escapeHtml(price.size)}</td>
       <td>${formatCostMoney(price.unitCost)}</td>
       <td>${Number(price.weight || 0).toLocaleString("pt-BR", { maximumFractionDigits: 3 })}</td>
       <td>${Number(price.goldThousandth || 0).toLocaleString("pt-BR", { maximumFractionDigits: 4 })}</td>
-      <td><button class="action-button danger-action" type="button" title="Excluir" aria-label="Excluir pre\u00e7o" data-price-delete="${price.model}||${price.size}">
+      <td><button class="action-button danger-action" type="button" title="Excluir" aria-label="Excluir pre\u00e7o" data-price-delete>
         <svg viewBox="0 0 24 24" focusable="false">
           <path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm-3 6h12l-.8 11H6.8L6 9Zm4 2v7h2v-7h-2Zm4 0v7h2v-7h-2Z"/>
         </svg>
@@ -2640,60 +2577,6 @@ function renderCharts() {
   renderRankingChart(elements.requesterRankingChart, countByRequester(), "pedido(s)");
 }
 
-function renderDashboardTable() {
-  if (!elements.dashboardBody) return;
-  const grouped = new Map();
-
-  getVisibleOrders().forEach((order) => {
-    const key = order.requester || "Sem solicitante";
-    const current = grouped.get(key) || { requester: key, orders: 0, pieces: 0, open: 0, delivered: 0 };
-    current.orders += 1;
-    current.pieces += countPieces([order]);
-    if (normalizeStatus(order.status) === "Finalizado") current.delivered += 1;
-    else current.open += 1;
-    grouped.set(key, current);
-  });
-
-  elements.dashboardBody.innerHTML = "";
-  const rows = [...grouped.values()].sort((a, b) => b.orders - a.orders);
-
-  if (!rows.length) {
-    elements.dashboardBody.innerHTML = '<tr><td colspan="5">Nenhum pedido para exibir.</td></tr>';
-    return;
-  }
-
-  rows.forEach((row) => {
-    const tr = document.createElement("tr");
-    tr.innerHTML = `
-      <td>${row.requester}</td>
-      <td>${row.orders}</td>
-      <td>${row.pieces}</td>
-      <td>${row.open}</td>
-      <td>${row.delivered}</td>
-    `;
-    elements.dashboardBody.append(tr);
-  });
-}
-
-function renderBarChart(container, data, labels) {
-  if (!container) return;
-  container.innerHTML = "";
-  const max = Math.max(1, ...Object.values(data));
-  const visibleLabels = labels.length ? labels : ["Sem dados"];
-
-  visibleLabels.forEach((label) => {
-    const value = data[label] || 0;
-    const line = document.createElement("div");
-    line.className = "bar-line";
-    line.innerHTML = `
-      <span>${label}</span>
-      <div class="bar-track"><div class="bar-fill" style="width: ${(value / max) * 100}%"></div></div>
-      <strong>${value}</strong>
-    `;
-    container.append(line);
-  });
-}
-
 function renderPieChart(container, data) {
   if (!container) return;
   const entries = Object.entries(data).filter(([, value]) => value > 0);
@@ -2720,7 +2603,7 @@ function renderPieChart(container, data) {
   legend.className = "chart-legend";
   legend.innerHTML = entries
     .map(([label, value], index) => `
-      <span><i style="background:${colors[index % colors.length]}"></i>${label}: <strong>${value}</strong></span>
+      <span><i style="background:${colors[index % colors.length]}"></i>${escapeHtml(label)}: <strong>${value}</strong></span>
     `)
     .join("");
 
@@ -2742,7 +2625,7 @@ function renderColumnChart(container, data) {
     column.className = "column-item";
     column.innerHTML = `
       <div class="column-bar" style="height:${Math.max(12, (value / max) * 118)}px"><strong>${value}</strong></div>
-      <span>${label}</span>
+      <span>${escapeHtml(label)}</span>
     `;
     container.append(column);
   });
@@ -2763,9 +2646,9 @@ function renderRankingChart(container, data, suffix) {
     row.className = "ranking-row";
     row.innerHTML = `
       <span class="ranking-position">${index + 1}</span>
-      <span class="ranking-label">${label}</span>
+      <span class="ranking-label">${escapeHtml(label)}</span>
       <div class="ranking-track"><div style="width:${(value / max) * 100}%"></div></div>
-      <strong>${value} ${suffix}</strong>
+      <strong>${value} ${escapeHtml(suffix)}</strong>
     `;
     container.append(row);
   });
@@ -2830,34 +2713,34 @@ function buildOrderCard(order, { mode }) {
   card.className = `order-card compact-order-card ${statusClass(displayStatus)} ${overdueDays ? "order-late" : ""} ${isExpanded ? "expanded-order" : ""} ${isDelivered && !isMasterUser() ? "locked-order" : ""}`;
   card.innerHTML = `
     <div class="order-line">
-      <button class="expand-button" type="button" data-toggle-order="${order.id}" title="${isExpanded ? "Recolher pedido" : "Expandir pedido"}" aria-label="${isExpanded ? "Recolher pedido" : "Expandir pedido"}" aria-expanded="${isExpanded}">
+      <button class="expand-button" type="button" data-toggle-order="${escapeHtml(order.id)}" title="${isExpanded ? "Recolher pedido" : "Expandir pedido"}" aria-label="${isExpanded ? "Recolher pedido" : "Expandir pedido"}" aria-expanded="${isExpanded}">
         ${isExpanded ? "\u25be" : "\u25b8"}
       </button>
       <div class="order-main-info">
-        <strong>${order.id}</strong>
-        <span>${order.requester || "Sem colaborador"}</span>
+        <strong>${escapeHtml(order.id)}</strong>
+        <span>${escapeHtml(order.requester || "Sem colaborador")}</span>
       </div>
       <div class="order-kpis">
         <span><strong>${totalPieces}</strong> pe\u00e7as</span>
         <span><strong>${deliveryTotalsInfo.delivered}</strong> entregues</span>
         <span><strong>${deliveryTotalsInfo.pending}</strong> pendentes</span>
-        <span><strong>${formatDate(order.requestDate)}</strong> abertura</span>
-        <span><strong>${formatDate(order.dueDate) || "Sem previs\u00e3o"}</strong> previs\u00e3o</span>
-        <span class="${overdueDays ? "overdue-kpi" : ""}"><strong>${leadTimeText(order)}</strong> lead time</span>
+        <span><strong>${escapeHtml(formatDate(order.requestDate))}</strong> abertura</span>
+        <span><strong>${escapeHtml(formatDate(order.dueDate) || "Sem previs\u00e3o")}</strong> previs\u00e3o</span>
+        <span class="${overdueDays ? "overdue-kpi" : ""}"><strong>${escapeHtml(leadTimeText(order))}</strong> lead time</span>
       </div>
       <div class="order-tags">
-        <span class="pill ${priorityClass}">${order.priority}</span>
-        <span class="pill status-pill">${displayStatus}</span>
+        <span class="pill ${priorityClass}">${escapeHtml(order.priority)}</span>
+        <span class="pill status-pill">${escapeHtml(displayStatus)}</span>
         ${canReactivateDelivered && isManagement ? `<span class="pill reactivate-status-pill">Master: altere o status para reativar</span>` : ""}
         ${overdueDays && isManagement ? `<span class="pill overdue-status-pill">${overdueDays} dia${overdueDays === 1 ? "" : "s"} úteis em atraso</span>` : ""}
       </div>
     </div>
     <div class="order-compact-meta">
-      <span>${order.origin}</span>
-      <span>${formatPhone(order.phone) || "Sem celular"}</span>
+      <span>${escapeHtml(order.origin)}</span>
+      <span>${escapeHtml(formatPhone(order.phone) || "Sem celular")}</span>
       <span>${items.length} item(ns)</span>
       ${isManagement ? `
-        <button class="galvanoplasty-indicator ${galvanoplastySent ? "done" : "pending"}" type="button" data-galvanoplasty-detail="${order.id}" title="${galvanoplastySent ? "Ver registro de Galvanoplastia" : "Sem registro de Galvanoplastia"}" aria-label="${galvanoplastySent ? "Ver registro de Galvanoplastia" : "Sem registro de Galvanoplastia"}">
+        <button class="galvanoplasty-indicator ${galvanoplastySent ? "done" : "pending"}" type="button" data-galvanoplasty-detail="${escapeHtml(order.id)}" title="${galvanoplastySent ? "Ver registro de Galvanoplastia" : "Sem registro de Galvanoplastia"}" aria-label="${galvanoplastySent ? "Ver registro de Galvanoplastia" : "Sem registro de Galvanoplastia"}">
           ${galvanoplastySent ? "\u2713" : "!"}
         </button>
       ` : ""}
@@ -2868,14 +2751,14 @@ function buildOrderCard(order, { mode }) {
           ${items.map((item, index) => {
             const delivered = deliveredQuantityForItem(order, index);
             const pending = Math.max(0, Number(item.quantity || 0) - delivered);
-            return `<li>${item.quantity}x ${item.model} \u00b7 ${item.size} \u00b7 ${item.bath} <span class="delivery-inline">Entregue: ${delivered} · Pendente: ${pending}</span></li>`;
+            return `<li>${escapeHtml(item.quantity)}x ${escapeHtml(item.model)} \u00b7 ${escapeHtml(item.size)} \u00b7 ${escapeHtml(item.bath)} <span class="delivery-inline">Entregue: ${delivered} · Pendente: ${pending}</span></li>`;
           }).join("")}
         </ul>
-        ${order.notes ? `<p class="detail-notes"><strong>Observa\u00e7\u00f5es:</strong> ${order.notes}</p>` : ""}
+        ${order.notes ? `<p class="detail-notes"><strong>Observa\u00e7\u00f5es:</strong> ${escapeHtml(order.notes)}</p>` : ""}
       </div>
     ` : `
       <ul class="order-items order-preview-items">
-        ${summaryItems.map((item) => `<li>${item.quantity}x ${item.model} \u00b7 ${item.size} \u00b7 ${item.bath}</li>`).join("")}
+        ${summaryItems.map((item) => `<li>${escapeHtml(item.quantity)}x ${escapeHtml(item.model)} \u00b7 ${escapeHtml(item.size)} \u00b7 ${escapeHtml(item.bath)}</li>`).join("")}
         ${hiddenItems ? `<li class="more-items">+ ${hiddenItems} item(ns) no pedido</li>` : ""}
       </ul>
     `}
@@ -2883,52 +2766,52 @@ function buildOrderCard(order, { mode }) {
       ${isManagement ? `
         <label class="compact-control">
           Status
-          <select data-order-status="${order.id}" ${canChangeDelivered ? "" : "disabled"} title="${canReactivateDelivered ? "Para reativar, altere o status e informe o motivo." : canChangeDelivered ? "Alterar status" : "Pedido finalizado. Somente Master pode reativar."}">
-            ${statuses.map((status) => `<option ${status === displayStatus ? "selected" : ""}>${status}</option>`).join("")}
+          <select data-order-status="${escapeHtml(order.id)}" ${canChangeDelivered ? "" : "disabled"} title="${canReactivateDelivered ? "Para reativar, altere o status e informe o motivo." : canChangeDelivered ? "Alterar status" : "Pedido finalizado. Somente Master pode reativar."}">
+            ${statuses.map((status) => `<option ${status === displayStatus ? "selected" : ""}>${escapeHtml(status)}</option>`).join("")}
           </select>
         </label>
         <label class="compact-control">
           Previs\u00e3o
-          <input data-order-due-date="${order.id}" type="date" value="${order.dueDate || ""}" ${canChangeDelivered ? "" : "disabled"} title="${canChangeDelivered ? "Alterar previsão" : "Pedido finalizado. Somente Master pode reativar."}">
+          <input data-order-due-date="${escapeHtml(order.id)}" type="date" value="${escapeHtml(order.dueDate || "")}" ${canChangeDelivered ? "" : "disabled"} title="${canChangeDelivered ? "Alterar previsão" : "Pedido finalizado. Somente Master pode reativar."}">
         </label>
-      ` : `<span class="status-note">${statusHelperText(displayStatus)}</span>`}
+      ` : `<span class="status-note">${escapeHtml(statusHelperText(displayStatus))}</span>`}
       <div class="order-actions" aria-label="A\u00e7\u00f5es do pedido">
-        ${canEdit ? `<button class="action-button" type="button" data-edit="${order.id}" title="Editar pedido" aria-label="Editar pedido">
+        ${canEdit ? `<button class="action-button" type="button" data-edit="${escapeHtml(order.id)}" title="Editar pedido" aria-label="Editar pedido">
           <svg viewBox="0 0 24 24" focusable="false">
             <path d="m4 16.6-.7 4.1 4.1-.7L18.8 8.6l-3.4-3.4L4 16.6Zm16.1-9.3 1-1a2 2 0 0 0 0-2.8l-.6-.6a2 2 0 0 0-2.8 0l-1 1 3.4 3.4Z"/>
           </svg>
         </button>` : ""}
-        ${!isManagement ? `<button class="action-button clone-action" type="button" data-clone="${order.id}" title="Clonar pedido" aria-label="Clonar pedido">
+        ${!isManagement ? `<button class="action-button clone-action" type="button" data-clone="${escapeHtml(order.id)}" title="Clonar pedido" aria-label="Clonar pedido">
           <svg viewBox="0 0 24 24" focusable="false">
             <path d="M8 7V4c0-1.1.9-2 2-2h8c1.1 0 2 .9 2 2v10c0 1.1-.9 2-2 2h-3v3c0 1.1-.9 2-2 2H5c-1.1 0-2-.9-2-2V9c0-1.1.9-2 2-2h3Zm2 0h3c1.1 0 2 .9 2 2v5h3V4h-8v3ZM5 9v10h8V9H5Z"/>
           </svg>
         </button>` : ""}
-        ${canSendWhatsapp ? `<a class="action-button whatsapp-action" href="${whatsappUrl(order)}" target="_blank" rel="noopener noreferrer" title="WhatsApp" aria-label="Enviar WhatsApp">
+        ${canSendWhatsapp ? `<a class="action-button whatsapp-action" href="${escapeHtml(whatsappUrl(order))}" target="_blank" rel="noopener noreferrer" title="WhatsApp" aria-label="Enviar WhatsApp">
           <svg viewBox="0 0 24 24" focusable="false">
             <path d="M12.1 3a8.9 8.9 0 0 0-7.6 13.5L3.4 21l4.6-1.1A8.9 8.9 0 1 0 12.1 3Zm0 2a6.9 6.9 0 1 1-3.5 12.8l-.4-.2-2.1.5.5-2-.3-.4A6.9 6.9 0 0 1 12.1 5Zm-3 3.6c-.2 0-.5.1-.7.3-.2.2-.8.8-.8 1.9s.8 2.2.9 2.4c.1.1 1.6 2.6 4 3.5 2 .8 2.4.6 2.8.6.4 0 1.4-.6 1.6-1.1.2-.6.2-1 .1-1.1-.1-.1-.2-.2-.5-.3l-1.6-.8c-.2-.1-.4-.1-.6.2l-.7.9c-.1.2-.3.2-.5.1-.3-.1-1.1-.4-2-1.2-.7-.7-1.2-1.5-1.4-1.7-.1-.2 0-.4.1-.5l.4-.5c.1-.2.2-.3.3-.5.1-.2.1-.4 0-.5l-.7-1.7c-.2-.4-.4-.4-.7-.4Z"/>
           </svg>
         </a>` : ""}
-        ${canOperate ? `<button class="action-button delivery-action" type="button" data-partial-delivery="${order.id}" title="Registrar entrega parcial ou final" aria-label="Registrar entrega parcial ou final">
+        ${canOperate ? `<button class="action-button delivery-action" type="button" data-partial-delivery="${escapeHtml(order.id)}" title="Registrar entrega parcial ou final" aria-label="Registrar entrega parcial ou final">
           <svg viewBox="0 0 24 24" focusable="false">
             <path d="M3 4h12v10H3V4Zm14 4h2.5l1.5 2.5V14h-4V8ZM6.5 20a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5Zm11 0a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5ZM5 6v6h8V6H5Z"/>
           </svg>
         </button>` : ""}
-        ${canOperate ? `<button class="action-button galvanoplasty-action" type="button" data-galvanoplasty-send="${order.id}" title="Registrar envio para Galvanoplastia" aria-label="Registrar envio para Galvanoplastia">
+        ${canOperate ? `<button class="action-button galvanoplasty-action" type="button" data-galvanoplasty-send="${escapeHtml(order.id)}" title="Registrar envio para Galvanoplastia" aria-label="Registrar envio para Galvanoplastia">
           <svg viewBox="0 0 24 24" focusable="false">
             <path d="M4 4h10l6 6v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2Zm9 1.5V11h5.5L13 5.5ZM6 13h10v2H6v-2Zm0 4h8v2H6v-2Z"/>
           </svg>
         </button>
-        <button class="action-button print-action" type="button" data-galvanoplasty-print="${order.id}" title="Imprimir controle de Galvanoplastia" aria-label="Imprimir controle de Galvanoplastia">
+        <button class="action-button print-action" type="button" data-galvanoplasty-print="${escapeHtml(order.id)}" title="Imprimir controle de Galvanoplastia" aria-label="Imprimir controle de Galvanoplastia">
           <svg viewBox="0 0 24 24" focusable="false">
             <path d="M6 2h9l5 5v6h-2V8h-4V4H6v16h6v2H4V4c0-1.1.9-2 2-2Zm9.5 14.5 2 2L22 14l-1.4-1.4-3.1 3.1-2-2-1.5 1.4Zm-8.5-6h8v2H7v-2Zm0 4h5v2H7v-2Z"/>
           </svg>
         </button>` : ""}
-        <button class="action-button print-action" type="button" data-print-order="${order.id}" title="Imprimir pedido" aria-label="Imprimir pedido">
+        <button class="action-button print-action" type="button" data-print-order="${escapeHtml(order.id)}" title="Imprimir pedido" aria-label="Imprimir pedido">
           <svg viewBox="0 0 24 24" focusable="false">
             <path d="M7 3h10v5H7V3Zm-2 7h14a3 3 0 0 1 3 3v5h-4v3H6v-3H2v-5a3 3 0 0 1 3-3Zm3 7v2h8v-2H8Zm10-3a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z"/>
           </svg>
         </button>
-        ${isMasterUser() && isManagement ? `<button class="action-button danger-action" type="button" data-delete="${order.id}" title="Excluir pedido" aria-label="Excluir pedido">
+        ${isMasterUser() && isManagement ? `<button class="action-button danger-action" type="button" data-delete="${escapeHtml(order.id)}" title="Excluir pedido" aria-label="Excluir pedido">
           <svg viewBox="0 0 24 24" focusable="false">
             <path d="M9 3h6l1 2h4v2H4V5h4l1-2Zm-3 6h12l-.8 11H6.8L6 9Zm4 2v7h2v-7h-2Zm4 0v7h2v-7h-2Z"/>
           </svg>
@@ -2979,135 +2862,6 @@ function showGalvanoplastyDetail(id) {
   );
 }
 
-function showManagementOrderDetail(id) {
-  if (!elements.managementOrderDetail) return;
-  const order = getVisibleOrders().find((item) => item.id === id);
-  if (!order) return;
-  const displayStatus = normalizeStatus(order.status);
-  const totalPieces = countPieces([order]);
-  const totals = deliveryTotals(order);
-  elements.managementOrderDetail.hidden = false;
-  elements.managementOrderDetail.innerHTML = `
-    <div class="panel-title-row">
-      <div>
-        <p class="eyebrow">Pedido selecionado</p>
-        <h2>${order.id}</h2>
-      </div>
-      <div class="report-actions">
-        <button class="ghost-button small" type="button" data-management-edit="${order.id}">Editar</button>
-        ${order.phone ? `<a class="ghost-button small" href="${whatsappUrl(order)}" target="_blank" rel="noopener noreferrer">WhatsApp</a>` : ""}
-        <button class="primary-button small" type="button" data-management-print="${order.id}">Imprimir</button>
-      </div>
-    </div>
-    <div class="detail-summary">
-      <span><strong>Status</strong>${displayStatus}</span>
-      <span><strong>Data</strong>${formatDate(order.requestDate)}</span>
-      <span><strong>Previs\u00e3o</strong>${formatDate(order.dueDate) || "-"}</span>
-      <span><strong>Lead time</strong>${leadTimeText(order)}</span>
-      <span><strong>Solicitante</strong>${order.requester}</span>
-      <span><strong>Loja</strong>${order.origin}</span>
-      <span><strong>Pe\u00e7as</strong>${totalPieces}</span>
-      <span><strong>Entregue</strong>${totals.delivered}</span>
-      <span><strong>Pendente</strong>${totals.pending}</span>
-      <span><strong>Itens</strong>${order.items.length}</span>
-    </div>
-    <div class="table-wrap compact-table">
-      <table class="report-table">
-        <thead>
-          <tr>
-            <th>Qtd.</th>
-            <th>Modelo</th>
-            <th>Tamanho</th>
-            <th>Banho</th>
-            <th>Entregue</th>
-            <th>Pendente</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${order.items.map((item, index) => `
-            <tr>
-              <td>${item.quantity}</td>
-              <td>${item.model}</td>
-              <td>${item.size}</td>
-              <td>${item.bath}</td>
-              <td>${deliveredQuantityForItem(order, index)}</td>
-              <td>${Math.max(0, Number(item.quantity || 0) - deliveredQuantityForItem(order, index))}</td>
-            </tr>
-          `).join("")}
-        </tbody>
-      </table>
-    </div>
-    ${order.notes ? `<p class="detail-notes"><strong>Observa\u00e7\u00f5es:</strong> ${order.notes}</p>` : ""}
-  `;
-  elements.managementOrderDetail.querySelector("[data-management-edit]")?.addEventListener("click", () => editOrder(order.id));
-  elements.managementOrderDetail.querySelector("[data-management-print]")?.addEventListener("click", () => printCollaboratorOrder(order.id));
-  elements.managementOrderDetail.scrollIntoView({ behavior: "smooth", block: "start" });
-}
-
-function showCollaboratorOrderDetail(id) {
-  if (!elements.collaboratorOrderDetail) return;
-  const order = getVisibleOrders().find((item) => item.id === id);
-  if (!order) return;
-  const displayStatus = normalizeStatus(order.status);
-  const totalPieces = countPieces([order]);
-  const totals = deliveryTotals(order);
-  elements.collaboratorOrderDetail.hidden = false;
-  elements.collaboratorOrderDetail.innerHTML = `
-    <div class="panel-title-row">
-      <div>
-        <p class="eyebrow">Pedido selecionado</p>
-        <h2>${order.id}</h2>
-      </div>
-      <div class="report-actions">
-        <button class="ghost-button small" type="button" data-detail-clone="${order.id}">Clonar pedido</button>
-        <button class="primary-button small" type="button" data-detail-print="${order.id}">Imprimir</button>
-      </div>
-    </div>
-    <div class="detail-summary">
-      <span><strong>Status</strong>${displayStatus}</span>
-      <span><strong>Data</strong>${formatDate(order.requestDate)}</span>
-      <span><strong>Previs\u00e3o</strong>${formatDate(order.dueDate) || "-"}</span>
-      <span><strong>Lead time</strong>${leadTimeText(order)}</span>
-      <span><strong>Loja</strong>${order.origin}</span>
-      <span><strong>Prioridade</strong>${order.priority}</span>
-      <span><strong>Pe\u00e7as</strong>${totalPieces}</span>
-      <span><strong>Entregue</strong>${totals.delivered}</span>
-      <span><strong>Pendente</strong>${totals.pending}</span>
-      <span><strong>Itens</strong>${order.items.length}</span>
-    </div>
-    <div class="table-wrap compact-table">
-      <table class="report-table">
-        <thead>
-          <tr>
-            <th>Qtd.</th>
-            <th>Modelo</th>
-            <th>Tamanho</th>
-            <th>Banho</th>
-            <th>Entregue</th>
-            <th>Pendente</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${order.items.map((item, index) => `
-            <tr>
-              <td>${item.quantity}</td>
-              <td>${item.model}</td>
-              <td>${item.size}</td>
-              <td>${item.bath}</td>
-              <td>${deliveredQuantityForItem(order, index)}</td>
-              <td>${Math.max(0, Number(item.quantity || 0) - deliveredQuantityForItem(order, index))}</td>
-            </tr>
-          `).join("")}
-        </tbody>
-      </table>
-    </div>
-    ${order.notes ? `<p class="detail-notes"><strong>Observa\u00e7\u00f5es:</strong> ${order.notes}</p>` : ""}
-  `;
-  elements.collaboratorOrderDetail.querySelector("[data-detail-clone]")?.addEventListener("click", () => cloneOrder(order.id));
-  elements.collaboratorOrderDetail.querySelector("[data-detail-print]")?.addEventListener("click", () => printCollaboratorOrder(order.id));
-  elements.collaboratorOrderDetail.scrollIntoView({ behavior: "smooth", block: "start" });
-}
-
 function printManagementOrders(type) {
   if (!isInternalUser()) return;
   const selectedOrders = getFilteredOrders();
@@ -3125,13 +2879,13 @@ function printManagementOrders(type) {
       const pieces = countPieces([order]);
       const items = Array.isArray(order.items) ? order.items : [];
       const detail = isAnalytical
-        ? items.map((item) => `${item.quantity}x ${item.model} ${item.size} ${item.bath}`).join("<br>")
+        ? items.map((item) => escapeHtml(`${item.quantity}x ${item.model} ${item.size} ${item.bath}`)).join("<br>")
         : compactReportItems(items);
       return `
         <tr>
-          <td><strong>${order.id}</strong><br>${formatDate(order.requestDate)}</td>
-          <td>${order.requester}<br><span>${order.origin}</span></td>
-          <td>${normalizeStatus(order.status)}<br><span>${order.priority}</span></td>
+          <td><strong>${escapeHtml(order.id)}</strong><br>${escapeHtml(formatDate(order.requestDate))}</td>
+          <td>${escapeHtml(order.requester)}<br><span>${escapeHtml(order.origin)}</span></td>
+          <td>${escapeHtml(normalizeStatus(order.status))}<br><span>${escapeHtml(order.priority)}</span></td>
           <td>${pieces}</td>
           <td>${detail}</td>
         </tr>
@@ -3176,7 +2930,7 @@ function printManagementOrders(type) {
               <img class="print-logo" src="logo-veri.png" alt="VERI">
               <h1>${title}</h1>
             </div>
-            <div class="printed-at">${formatDateTime(new Date().toISOString())}</div>
+            <div class="printed-at">${escapeHtml(formatDateTime(new Date().toISOString()))}</div>
           </header>
           <div class="summary">
             <span>${selectedOrders.length} pedido(s)</span>
@@ -3277,7 +3031,9 @@ function printGalvanoplastyProtocol(id) {
   const order = getVisibleOrders().find((item) => item.id === id) || orders.find((item) => item.id === id);
   if (!order) return;
   const galvanoplasty = order.galvanoplasty || {};
-  const sentAt = galvanoplasty.sentAt ? new Date(galvanoplasty.sentAt) : new Date();
+  const parsedSentAt = galvanoplasty.sentAt ? new Date(galvanoplasty.sentAt) : new Date();
+  const sentAt = Number.isNaN(parsedSentAt.getTime()) ? new Date() : parsedSentAt;
+  const sentTime = sentAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" });
   const sentBy = galvanoplasty.sentBy || currentSession?.name || "";
   const receivedBy = galvanoplasty.receivedBy || "";
   const returnDate = galvanoplasty.returnDate || galvanoplasty.deliveryDate || "";
@@ -3296,21 +3052,21 @@ function printGalvanoplastyProtocol(id) {
         <span>Via: ${label}</span>
       </header>
       <div class="meta">
-        <span><strong>Pedido</strong>${order.id}</span>
-        <span><strong>${label === "Galvanoplastia" ? "Data recebimento" : "Data de envio"}</strong>${formatShortDate(sentAt)}</span>
-        <span><strong>Hora</strong>${sentAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</span>
-        <span><strong>Enviado por</strong>${sentBy}</span>
-        <span><strong>Recebido por</strong>${receivedBy || "-"}</span>
-        <span><strong>${label === "Galvanoplastia" ? "Data de retorno" : "Origem"}</strong>${label === "Galvanoplastia" ? formatShortDate(returnDate) || "__-__-__" : order.origin || "-"}</span>
+        <span><strong>Pedido</strong>${escapeHtml(order.id)}</span>
+        <span><strong>${label === "Galvanoplastia" ? "Data recebimento" : "Data de envio"}</strong>${escapeHtml(formatShortDate(sentAt))}</span>
+        <span><strong>Hora</strong>${escapeHtml(sentTime)}</span>
+        <span><strong>Enviado por</strong>${escapeHtml(sentBy)}</span>
+        <span><strong>Recebido por</strong>${escapeHtml(receivedBy || "-")}</span>
+        <span><strong>${label === "Galvanoplastia" ? "Data de retorno" : "Origem"}</strong>${escapeHtml(label === "Galvanoplastia" ? formatShortDate(returnDate) || "__-__-__" : order.origin || "-")}</span>
       </div>
       <div class="totals">
         <span><strong>Total geral</strong>${totalPieces} pe\u00e7as</span>
-        ${bathTotals.map((item) => `<span><strong>${item.bath}</strong>${item.quantity} pe\u00e7as</span>`).join("")}
+        ${bathTotals.map((item) => `<span><strong>${escapeHtml(item.bath)}</strong>${item.quantity} pe\u00e7as</span>`).join("")}
       </div>
       <table>
         <thead><tr><th>Resumo para controle interno</th><th>Banho</th><th>Qtd.</th></tr></thead>
         <tbody>
-          ${summaryRows.map((item) => `<tr><td>${item.label}</td><td>${item.bath}</td><td>${item.quantity}</td></tr>`).join("")}
+          ${summaryRows.map((item) => `<tr><td>${escapeHtml(item.label)}</td><td>${escapeHtml(item.bath)}</td><td>${item.quantity}</td></tr>`).join("")}
           ${remainingGroups ? `<tr><td colspan="3">+ ${remainingGroups} grupo(s) adicional(is) detalhados no pedido digital.</td></tr>` : ""}
         </tbody>
       </table>
@@ -3318,8 +3074,8 @@ function printGalvanoplastyProtocol(id) {
       <div class="signatures">
         ${
           label === "Almoxarifado"
-            ? `<div class="line">Assinatura de quem enviou</div><div class="line">Recebido por: ${receivedBy || "________________________"}</div>`
-            : `<div class="line">Data do recebimento: ${formatShortDate(sentAt)}</div><div class="line">Data de retorno: ${formatShortDate(returnDate) || "__-__-__"}</div>`
+            ? `<div class="line">Assinatura de quem enviou</div><div class="line">Recebido por: ${escapeHtml(receivedBy || "________________________")}</div>`
+            : `<div class="line">Data do recebimento: ${escapeHtml(formatShortDate(sentAt))}</div><div class="line">Data de retorno: ${escapeHtml(formatShortDate(returnDate) || "__-__-__")}</div>`
         }
       </div>
     </section>
@@ -3329,7 +3085,7 @@ function printGalvanoplastyProtocol(id) {
     <html>
       <head>
         <meta charset="utf-8">
-        <title>Galvanoplastia - ${order.id}</title>
+        <title>Galvanoplastia - ${escapeHtml(order.id)}</title>
         <style>
           @page { size: A4 portrait; margin: 8mm; }
           * { box-sizing: border-box; }
@@ -3403,7 +3159,7 @@ function printCollaboratorOrder(id) {
     <html>
       <head>
         <meta charset="utf-8">
-        <title>${order.id}</title>
+        <title>${escapeHtml(order.id)}</title>
         <style>
           @page { size: A4 portrait; margin: 10mm; }
           * { box-sizing: border-box; }
@@ -3425,18 +3181,18 @@ function printCollaboratorOrder(id) {
       <body>
         <div class="header">
           <div>
-            <h1>Pedido ${order.id}</h1>
+            <h1>Pedido ${escapeHtml(order.id)}</h1>
             <p>Protocolo de pedido para consulta, confer\u00eancia e impress\u00e3o</p>
           </div>
           <img class="print-logo" src="logo-veri.png" alt="VERI">
         </div>
         <div class="meta">
-          <span><strong>Status</strong><br>${normalizeStatus(order.status)}</span>
-          <span><strong>Data</strong><br>${formatDate(order.requestDate)}</span>
-          <span><strong>Previs\u00e3o</strong><br>${formatDate(order.dueDate) || "-"}</span>
-          <span><strong>Lead time</strong><br>${leadTimeText(order)}</span>
-          <span><strong>Loja</strong><br>${order.origin}</span>
-          <span><strong>Solicitante</strong><br>${order.requester}</span>
+          <span><strong>Status</strong><br>${escapeHtml(normalizeStatus(order.status))}</span>
+          <span><strong>Data</strong><br>${escapeHtml(formatDate(order.requestDate))}</span>
+          <span><strong>Previs\u00e3o</strong><br>${escapeHtml(formatDate(order.dueDate) || "-")}</span>
+          <span><strong>Lead time</strong><br>${escapeHtml(leadTimeText(order))}</span>
+          <span><strong>Loja</strong><br>${escapeHtml(order.origin)}</span>
+          <span><strong>Solicitante</strong><br>${escapeHtml(order.requester)}</span>
           <span><strong>Pe\u00e7as</strong><br>${totalPieces}</span>
           <span><strong>Entregue</strong><br>${totals.delivered}</span>
           <span><strong>Pendente</strong><br>${totals.pending}</span>
@@ -3445,10 +3201,10 @@ function printCollaboratorOrder(id) {
         <table>
           <thead><tr><th>Qtd.</th><th>Modelo</th><th>Tamanho</th><th>Banho</th><th>Entregue</th><th>Pendente</th></tr></thead>
           <tbody>
-            ${order.items.map((item, index) => `<tr><td>${item.quantity}</td><td>${item.model}</td><td>${item.size}</td><td>${item.bath}</td><td>${deliveredQuantityForItem(order, index)}</td><td>${Math.max(0, Number(item.quantity || 0) - deliveredQuantityForItem(order, index))}</td></tr>`).join("")}
+            ${order.items.map((item, index) => `<tr><td>${escapeHtml(item.quantity)}</td><td>${escapeHtml(item.model)}</td><td>${escapeHtml(item.size)}</td><td>${escapeHtml(item.bath)}</td><td>${deliveredQuantityForItem(order, index)}</td><td>${Math.max(0, Number(item.quantity || 0) - deliveredQuantityForItem(order, index))}</td></tr>`).join("")}
           </tbody>
         </table>
-        ${order.notes ? `<p><strong>Observa\u00e7\u00f5es:</strong> ${order.notes}</p>` : ""}
+        ${order.notes ? `<p><strong>Observa\u00e7\u00f5es:</strong> ${escapeHtml(order.notes)}</p>` : ""}
         <div class="sign">
           <div class="line">Solicitante</div>
           <div class="line">Confer\u00eancia</div>
@@ -3487,7 +3243,6 @@ function cloneOrder(id) {
 
   elements.editingId.value = "";
   elements.formTitle.textContent = "Clonar pedido";
-  if (elements.orderNumberPreview) elements.orderNumberPreview.textContent = "";
   elements.requester.value = currentSession?.name || order.requester || "";
   elements.origin.value = order.origin || "";
   elements.priority.value = order.priority || "Normal";
@@ -3556,6 +3311,8 @@ function requireWhatsappStatusNotification(order, nextStatus, { force = false } 
     return Promise.resolve(null);
   }
 
+  // Um modal anterior ainda aberto é cancelado (resolve null) para não deixar a promise pendurada.
+  if (pendingWhatsappFinish) pendingWhatsappFinish(null);
   document.querySelector(".whatsapp-notification-modal")?.remove();
   return new Promise((resolve) => {
     const modal = document.createElement("div");
@@ -3569,15 +3326,15 @@ function requireWhatsappStatusNotification(order, nextStatus, { force = false } 
           </div>
         </div>
         <div class="whatsapp-confirm-summary">
-          <span><strong>Pedido</strong>${order.id}</span>
-          <span><strong>Novo status</strong>${normalizedStatus}</span>
-          <span><strong>Solicitante</strong>${order.requester}</span>
-          <span><strong>Celular</strong>${formatPhone(order.phone)}</span>
+          <span><strong>Pedido</strong>${escapeHtml(order.id)}</span>
+          <span><strong>Novo status</strong>${escapeHtml(normalizedStatus)}</span>
+          <span><strong>Solicitante</strong>${escapeHtml(order.requester)}</span>
+          <span><strong>Celular</strong>${escapeHtml(formatPhone(order.phone))}</span>
         </div>
         <p class="subtle-text">Abra o WhatsApp, envie a mensagem preparada e depois confirme o envio para atualizar o pedido.</p>
         <p class="whatsapp-confirm-state" data-whatsapp-state>Aguardando abertura do WhatsApp.</p>
         <div class="login-actions whatsapp-confirm-actions">
-          <button class="text-button" type="button" data-cancel-whatsapp>Cancelar</button>
+          <button class="text-button" type="button" data-cancel-whatsapp data-modal-close>Cancelar</button>
           <button class="ghost-button whatsapp-action" type="button" data-open-required-whatsapp>Abrir WhatsApp</button>
           <button class="primary-button" type="button" data-confirm-required-whatsapp disabled>Mensagem enviada</button>
         </div>
@@ -3587,9 +3344,12 @@ function requireWhatsappStatusNotification(order, nextStatus, { force = false } 
 
     let opened = false;
     const finish = (result) => {
+      if (pendingWhatsappFinish === finish) pendingWhatsappFinish = null;
       modal.remove();
       resolve(result);
     };
+    pendingWhatsappFinish = finish;
+    focusModal(modal, "[data-open-required-whatsapp]");
     modal.querySelector("[data-cancel-whatsapp]")?.addEventListener("click", () => finish(null));
     modal.querySelector("[data-open-required-whatsapp]")?.addEventListener("click", () => {
       openExternalLink(whatsappUrl({ ...order, status: normalizedStatus }));
@@ -3633,17 +3393,17 @@ function renderReports() {
     const itemSummary = compactReportItems(order.items);
     row.innerHTML = `
       <td class="protocol-id">
-        <strong>${order.id}</strong>
-        <span>${formatDate(order.requestDate)}</span>
-        <span>Previs\u00e3o: ${formatDate(order.dueDate) || "-"}</span>
-        <span>Lead time: ${leadTimeText(order)}</span>
-        <span class="pill ${order.priority === "Urgente" ? "urgent" : ""}">${order.priority}</span>
-        <span class="pill status-pill">${normalizeStatus(order.status)}</span>
+        <strong>${escapeHtml(order.id)}</strong>
+        <span>${escapeHtml(formatDate(order.requestDate))}</span>
+        <span>Previs\u00e3o: ${escapeHtml(formatDate(order.dueDate) || "-")}</span>
+        <span>Lead time: ${escapeHtml(leadTimeText(order))}</span>
+        <span class="pill ${order.priority === "Urgente" ? "urgent" : ""}">${escapeHtml(order.priority)}</span>
+        <span class="pill status-pill">${escapeHtml(normalizeStatus(order.status))}</span>
       </td>
       <td>
-        <strong>${order.requester}</strong>
-        <span>${formatPhone(order.phone)}</span>
-        <span>${order.origin}</span>
+        <strong>${escapeHtml(order.requester)}</strong>
+        <span>${escapeHtml(formatPhone(order.phone))}</span>
+        <span>${escapeHtml(order.origin)}</span>
       </td>
       <td>
         <strong>${totalPieces}</strong> pe\u00e7as<br>
@@ -3666,7 +3426,7 @@ function compactReportItems(items) {
     const key = `${item.model} ${item.size} ${item.bath}`;
     grouped.set(key, (grouped.get(key) || 0) + Number(item.quantity || 0));
   });
-  const lines = [...grouped.entries()].map(([label, quantity]) => `${quantity}x ${label}`);
+  const lines = [...grouped.entries()].map(([label, quantity]) => escapeHtml(`${quantity}x ${label}`));
   const visibleLines = lines.slice(0, 6);
   const hidden = Math.max(0, lines.length - visibleLines.length);
   return `${visibleLines.join("<br>")}${hidden ? `<br><strong>+ ${hidden} item(ns)</strong>` : ""}`;
@@ -3699,23 +3459,6 @@ function countPieces(orderList) {
   return orderList.reduce((sum, order) => sum + order.items.reduce((itemSum, item) => itemSum + Number(item.quantity || 0), 0), 0);
 }
 
-function countByStatus() {
-  const visibleOrders = getDashboardOrders();
-  return statuses.reduce((acc, status) => {
-    acc[status] = visibleOrders.filter((order) => normalizeStatus(order.status) === status).length;
-    return acc;
-  }, {});
-}
-
-function countByBath() {
-  return getDashboardOrders().reduce((acc, order) => {
-    order.items.forEach((item) => {
-      acc[item.bath] = (acc[item.bath] || 0) + item.quantity;
-    });
-    return acc;
-  }, {});
-}
-
 function countByPriority() {
   const counts = getDashboardOrders().reduce((acc, order) => {
     const priority = order.priority || "Sem prioridade";
@@ -3745,28 +3488,10 @@ function countByOriginMonth() {
   return sortCountObject(counts, 10);
 }
 
-function countByDate() {
-  const counts = getDashboardOrders().reduce((acc, order) => {
-    const date = formatDate(order.requestDate) || "Sem data";
-    acc[date] = (acc[date] || 0) + 1;
-    return acc;
-  }, {});
-  return sortCountObject(counts, 8);
-}
-
 function countByRequester() {
   const counts = getDashboardOrders().reduce((acc, order) => {
     const requester = order.requester || "Sem solicitante";
     acc[requester] = (acc[requester] || 0) + 1;
-    return acc;
-  }, {});
-  return sortCountObject(counts, 8);
-}
-
-function countPiecesByRequester() {
-  const counts = getDashboardOrders().reduce((acc, order) => {
-    const requester = order.requester || "Sem solicitante";
-    acc[requester] = (acc[requester] || 0) + countPieces([order]);
     return acc;
   }, {});
   return sortCountObject(counts, 8);
@@ -3871,15 +3596,28 @@ function phoneForWhatsapp(value) {
   return `55${phone}`;
 }
 
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function csvCell(value) {
   const text = String(value ?? "");
   return `"${text.replaceAll('"', '""')}"`;
 }
 
-function addDays(date, days) {
-  const next = new Date(date);
-  next.setDate(next.getDate() + days);
-  return next;
+function todayIso() {
+  // Data local do navegador (America/Sao_Paulo para os usuários), recalculada a cada uso.
+  const now = new Date();
+  return [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, "0"),
+    String(now.getDate()).padStart(2, "0"),
+  ].join("-");
 }
 
 function toIsoDate(date) {
@@ -3899,7 +3637,7 @@ function isBusinessDay(date) {
 }
 
 function addBusinessDays(value, days) {
-  const date = parseIsoDate(value) || parseIsoDate(todayIso) || new Date();
+  const date = parseIsoDate(value) || parseIsoDate(todayIso()) || new Date();
   let added = 0;
   while (added < days) {
     date.setUTCDate(date.getUTCDate() + 1);
@@ -3922,21 +3660,23 @@ function businessDaysBetween(startValue, endValue) {
 }
 
 function defaultDueDate(requestDate) {
-  return addBusinessDays(requestDate || todayIso, DEFAULT_LEAD_TIME_BUSINESS_DAYS);
+  return addBusinessDays(requestDate || todayIso(), DEFAULT_LEAD_TIME_BUSINESS_DAYS);
 }
 
 function overdueBusinessDays(order) {
   if (normalizeStatus(order?.status) === "Finalizado") return 0;
-  const dueDate = order?.dueDate || defaultDueDate(order?.requestDate || todayIso);
-  const todayDate = parseIsoDate(todayIso);
+  const today = todayIso();
+  const dueDate = order?.dueDate || defaultDueDate(order?.requestDate || today);
+  const todayDate = parseIsoDate(today);
   const due = parseIsoDate(dueDate);
   if (!todayDate || !due || todayDate <= due) return 0;
-  return businessDaysBetween(dueDate, todayIso);
+  return businessDaysBetween(dueDate, today);
 }
 
 function formatDate(value) {
-  if (!value) return "";
-  return new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" }).format(new Date(`${value}T00:00:00Z`));
+  const date = parseIsoDate(String(value || "").slice(0, 10));
+  if (!date) return "";
+  return new Intl.DateTimeFormat("pt-BR", { timeZone: "UTC" }).format(date);
 }
 
 function formatShortDate(value) {
@@ -3966,17 +3706,13 @@ function formatDateTime(value) {
 }
 
 function leadTimeText(order) {
-  const requestDate = order?.requestDate || todayIso;
+  const requestDate = order?.requestDate || todayIso();
   const dueDate = order?.dueDate || defaultDueDate(requestDate);
   const days = businessDaysBetween(requestDate, dueDate) || DEFAULT_LEAD_TIME_BUSINESS_DAYS;
   const overdue = overdueBusinessDays({ ...order, requestDate, dueDate });
   const base = `${days} dia${days === 1 ? "" : "s"} úteis`;
   if (!overdue) return base;
   return `${base} · ${overdue} dia${overdue === 1 ? "" : "s"} úteis em atraso`;
-}
-
-function formatMoney(value) {
-  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(value || 0));
 }
 
 function formatCostMoney(value) {
@@ -4015,7 +3751,7 @@ function roleLabel(role) {
 
 function normalizeOrders(orderList) {
   return orderList.map((order) => {
-    const requestDate = order.requestDate || todayIso;
+    const requestDate = order.requestDate || todayIso();
     return {
       ...order,
       requester: repairText(order.requester),

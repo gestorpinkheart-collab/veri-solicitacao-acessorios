@@ -44,6 +44,13 @@ PUBLIC_FILES = {
 # Brasil sem horário de verão (UTC-3). Não usamos zoneinfo porque o Windows não traz tzdata.
 BR_TZ = timezone(timedelta(hours=-3))
 MAX_BODY_BYTES = 1024 * 1024
+# Sem script inline: as janelas de impressão usam só <style> e o print() é chamado pela janela de origem.
+CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data: blob:; connect-src 'self'; font-src 'self' data: https://fonts.gstatic.com; "
+    "style-src-elem 'self' 'unsafe-inline' https://fonts.googleapis.com; frame-ancestors 'none'; "
+    "base-uri 'none'; form-action 'self'"
+)
 SESSION_TTL_SECONDS = 12 * 60 * 60
 SESSION_USER_CACHE_SECONDS = 60
 PASSWORD_MIN_LENGTH = 8
@@ -506,6 +513,7 @@ class RequestHandler(SimpleHTTPRequestHandler):
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("Referrer-Policy", "same-origin")
         self.send_header("Strict-Transport-Security", "max-age=31536000")
+        self.send_header("Content-Security-Policy", CONTENT_SECURITY_POLICY)
         super().end_headers()
 
     def send_json(self, payload, status=200, headers=None):

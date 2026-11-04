@@ -32,6 +32,11 @@
   box-sizing: border-box;
 }
 
+:focus-visible {
+  outline: 2px solid var(--accent-dark);
+  outline-offset: 2px;
+}
+
 [hidden],
 .app-view,
 .login-mode {
