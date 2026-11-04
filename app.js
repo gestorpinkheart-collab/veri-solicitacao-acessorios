@@ -230,6 +230,7 @@ const elements = {
   managementUserName: document.querySelector("#managementUserName"),
   managementUserSector: document.querySelector("#managementUserSector"),
   managementUserPhone: document.querySelector("#managementUserPhone"),
+  managementUserEmail: document.querySelector("#managementUserEmail"),
   managementUserPassword: document.querySelector("#managementUserPassword"),
   managementUserSubmit: document.querySelector("#managementUserSubmit"),
   cancelManagementUserEdit: document.querySelector("#cancelManagementUserEdit"),
@@ -2105,7 +2106,7 @@ function renderMasterUsers() {
       <td>${escapeHtml(user.name)}</td>
       <td>${escapeHtml(roleLabel(user.role))}</td>
       <td>${escapeHtml(user.origin || "")}</td>
-      <td>${escapeHtml(formatPhone(user.phone) || "")}</td>
+      <td>${escapeHtml(formatPhone(user.phone) || "")}${user.email ? `<br><small>${escapeHtml(user.email)}</small>` : ""}</td>
       <td>${escapeHtml(formatDateTime(user.createdAt))}</td>
       <td>${escapeHtml(formatDateTime(user.updatedAt))}</td>
       <td><span class="pill ${!isActive || needsChange ? "urgent" : ""}">${!isActive ? "Inativo" : needsChange ? "Troca pendente" : "Ativo"}</span></td>
@@ -2136,6 +2137,7 @@ function setManagementUserFormMode(user = null) {
   if (elements.managementUserName) elements.managementUserName.value = user?.name || "";
   if (elements.managementUserSector) elements.managementUserSector.value = user?.origin || "";
   if (elements.managementUserPhone) elements.managementUserPhone.value = user?.phone ? formatPhone(user.phone) : "";
+  if (elements.managementUserEmail) elements.managementUserEmail.value = user?.email || "";
   if (elements.managementUserPassword) {
     elements.managementUserPassword.value = "";
     elements.managementUserPassword.required = !user;
@@ -2359,6 +2361,7 @@ async function handleManagementUserSubmit(event) {
   const name = elements.managementUserName.value.trim();
   const sector = elements.managementUserSector.value.trim();
   const phone = elements.managementUserPhone.value.trim();
+  const email = elements.managementUserEmail?.value.trim() || "";
   const password = elements.managementUserPassword.value.trim();
   const wasEditing = Boolean(editingManagementUserLogin);
 
@@ -2381,6 +2384,7 @@ async function handleManagementUserSubmit(event) {
         name,
         sector,
         phone,
+        email,
         password,
       }),
     });

@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;1,9..144,400&family=Inter:wght@400;500;600;700&display=swap">
-    <link rel="stylesheet" href="styles.css?v=20261103-rebrand">
+    <link rel="stylesheet" href="styles.css?v=20261104-alerta">
   </head>
   <body>
     <section class="entry-screen" id="entryScreen" aria-label="Login">
@@ -690,6 +690,10 @@
                   <input id="managementUserPhone" type="tel" placeholder="(11) 99999-9999">
                 </label>
                 <label>
+                  E-mail <small>(alerta de pedido novo para Master e Gest&atilde;o)</small>
+                  <input id="managementUserEmail" type="email" maxlength="160" placeholder="nome@porveri.com.br" autocomplete="off">
+                </label>
+                <label>
                   Senha padr&atilde;o
                   <input id="managementUserPassword" type="password" minlength="8" placeholder="Senha provis&oacute;ria" autocomplete="new-password" required>
                 </label>
@@ -704,7 +708,7 @@
                       <th>Nome</th>
                       <th>Perfil</th>
                       <th>Loja</th>
-                      <th>Celular</th>
+                      <th>Celular / e-mail</th>
                       <th>Criado em</th>
                       <th>Atualizado em</th>
                       <th>Status</th>
@@ -859,6 +863,6 @@
       </div>
     </template>
 
-    <script src="app.js?v=20261103-rebrand" charset="utf-8"></script>
+    <script src="app.js?v=20261104-alerta" charset="utf-8"></script>
   </body>
 </html>

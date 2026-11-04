@@ -190,6 +190,7 @@ create table if not exists public.accessory_users (
 alter table public.accessory_users add column if not exists phone text;
 alter table public.accessory_users add column if not exists origin text;
 alter table public.accessory_users add column if not exists active boolean not null default true;
+alter table public.accessory_users add column if not exists email text;
 alter table public.accessory_users drop constraint if exists accessory_users_role_check;
 alter table public.accessory_users add constraint accessory_users_role_check check (role in ('master', 'consultant', 'collaborator'));
 

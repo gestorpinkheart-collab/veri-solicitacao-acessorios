@@ -1,7 +1,7 @@
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from json import dumps, loads
 from pathlib import Path
-from threading import Lock
+from threading import Lock, Thread
 from urllib.parse import parse_qs, quote, unquote, urlparse
 from zipfile import ZIP_DEFLATED, ZipFile
 from io import BytesIO
@@ -139,6 +139,12 @@ SUPABASE_PRICES_TABLE = environ.get("SUPABASE_PRICES_TABLE", "accessory_prices")
 SUPABASE_COST_SETTINGS_TABLE = environ.get("SUPABASE_COST_SETTINGS_TABLE", "accessory_cost_settings")
 SUPABASE_USERS_TABLE = environ.get("SUPABASE_USERS_TABLE", "accessory_users")
 SUPABASE_PASSWORD_RESETS_TABLE = environ.get("SUPABASE_PASSWORD_RESETS_TABLE", "accessory_password_resets")
+
+# Alerta de pedido novo por e-mail (Resend). Sem a chave, o alerta fica desligado.
+RESEND_API_KEY = environ.get("RESEND_API_KEY", "").strip()
+ALERT_EMAIL_FROM = environ.get("ALERT_EMAIL_FROM", "").strip()
+ALERT_ROLES = ("master", "consultant")
+APP_URL = environ.get("APP_URL", "https://veri-solicitacao-acessorios.onrender.com").strip()
 
 
 def resolve_session_secret():
@@ -763,9 +769,11 @@ def create_order(order, user):
 
     if supabase_enabled():
         try:
-            return create_order_supabase(normalized)
+            created = create_order_supabase(normalized)
         except (HTTPError, URLError, ValueError) as exc:
             raise storage_error("criar pedido no Supabase", exc) from exc
+        notify_new_order(created if isinstance(created, dict) else normalized)
+        return created
 
     with LOCK:
         orders = read_local_orders_unlocked()
@@ -774,7 +782,148 @@ def create_order(order, user):
             normalized["id"] = generate_order_id()
         orders.insert(0, normalized)
         write_json_file(DATA_FILE, orders)
+    notify_new_order(normalized)
     return normalized
+
+
+def notify_new_order(order):
+    """Dispara o alerta de pedido novo em segundo plano; falha no e-mail nunca afeta o pedido."""
+    if not RESEND_API_KEY or not ALERT_EMAIL_FROM:
+        return
+    Thread(target=send_new_order_alert, args=(dict(order),), daemon=True).start()
+
+
+def new_order_alert_recipients():
+    recipients = []
+    for user in read_users():
+        email = str(user.get("email", "") or "").strip()
+        if user.get("active") is False or user.get("role") not in ALERT_ROLES or not email:
+            continue
+        if email not in recipients:
+            recipients.append(email)
+    return recipients
+
+
+def send_new_order_alert(order):
+    try:
+        recipients = new_order_alert_recipients()
+        if not recipients:
+            return
+        order_id = str(order.get("id", ""))
+        urgent = order.get("priority") == "Urgente"
+        subject = f"{'URGENTE · ' if urgent else ''}Novo pedido {order_id} · {order.get('requester', '')}".strip(" ·")
+        html = new_order_alert_html(order)
+        text = new_order_alert_text(order)
+        # Um e-mail por destinatário (envio em lote), sem expor os outros endereços.
+        body = [
+            {"from": ALERT_EMAIL_FROM, "to": [email], "subject": subject, "html": html, "text": text}
+            for email in recipients[:100]
+        ]
+        request = Request(
+            "https://api.resend.com/emails/batch",
+            data=dumps(body).encode("utf-8"),
+            method="POST",
+            headers={
+                "Authorization": f"Bearer {RESEND_API_KEY}",
+                "Content-Type": "application/json",
+                "User-Agent": "veri-solicitacao-acessorios",
+            },
+        )
+        with urlopen(request, timeout=15) as response:
+            response.read()
+        log_error(f"Alerta de pedido {order_id} enviado para {len(recipients)} destinatário(s).")
+    except HTTPError as exc:
+        detail = exc.read().decode("utf-8", "replace")[:300]
+        log_error(f"Falha ao enviar alerta de pedido pelo Resend ({exc.code}): {detail}")
+    except Exception as exc:  # noqa: BLE001 - o alerta é melhor esforço
+        log_error(f"Falha ao enviar alerta de pedido: {exc}")
+
+
+def alert_order_items(order):
+    lines = []
+    for item in order.get("items") or []:
+        if not isinstance(item, dict):
+            continue
+        quantity = item.get("quantity", "")
+        if isinstance(quantity, float) and quantity.is_integer():
+            quantity = int(quantity)
+        description = " · ".join(str(item.get(key, "") or "").strip() for key in ("model", "size", "bath") if item.get(key))
+        lines.append((str(quantity), description))
+    return lines
+
+
+def new_order_alert_text(order):
+    lines = [
+        f"Novo pedido de acessórios: {order.get('id', '')}",
+        f"Solicitante: {order.get('requester', '')}",
+        f"Loja/origem: {order.get('origin', '')}",
+        f"Prioridade: {order.get('priority', '')}",
+        f"Abertura: {format_br_date(order.get('requestDate'))}  ·  Previsão: {format_br_date(order.get('dueDate'))}",
+        "",
+        "Itens:",
+    ]
+    lines += [f"  {quantity}x {description}" for quantity, description in alert_order_items(order)]
+    if order.get("notes"):
+        lines += ["", f"Observações: {order.get('notes')}"]
+    lines += ["", f"Abrir o sistema: {APP_URL}"]
+    return "\n".join(lines)
+
+
+def new_order_alert_html(order):
+    urgent = order.get("priority") == "Urgente"
+    priority_color = "#A8322D" if urgent else "#2C3F37"
+    rows = "".join(
+        f'<tr><td style="padding:8px 12px;border-bottom:1px solid #E5DED1;font-variant-numeric:tabular-nums;'
+        f'color:#7A5C2C;font-weight:600;white-space:nowrap">{escape(quantity)}x</td>'
+        f'<td style="padding:8px 12px;border-bottom:1px solid #E5DED1;color:#1F2E28">{escape(description)}</td></tr>'
+        for quantity, description in alert_order_items(order)
+    )
+    details = [
+        ("Solicitante", order.get("requester", "")),
+        ("Loja / origem", order.get("origin", "")),
+        ("Abertura", format_br_date(order.get("requestDate"))),
+        ("Previsão", format_br_date(order.get("dueDate"))),
+    ]
+    detail_rows = "".join(
+        f'<tr><td style="padding:4px 0;color:#5E6B64;width:130px">{escape(label)}</td>'
+        f'<td style="padding:4px 0;color:#1F2E28;font-weight:600">{escape(str(value or "—"))}</td></tr>'
+        for label, value in details
+    )
+    notes = ""
+    if order.get("notes"):
+        notes = (
+            '<p style="margin:20px 0 0;padding:12px 14px;background:#F4ECDD;border-radius:10px;color:#3E4C46">'
+            f'<strong style="color:#1F2E28">Observações:</strong> {escape(str(order.get("notes")))}</p>'
+        )
+    return f"""<!doctype html>
+<html lang="pt-BR"><body style="margin:0;background:#F7F4EE;font-family:Inter,Segoe UI,Arial,sans-serif">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#F7F4EE;padding:24px 12px">
+<tr><td align="center">
+<table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#FFFFFF;border:1px solid #E5DED1;border-radius:14px;overflow:hidden">
+<tr><td style="background:#1F2E28;padding:22px 28px">
+<div style="color:#D8BF8E;font-size:12px;letter-spacing:2px;text-transform:uppercase">VERI · Pedido de acessórios</div>
+<div style="color:#FFFFFF;font-family:Georgia,'Times New Roman',serif;font-size:24px;margin-top:6px">Novo pedido recebido</div>
+</td></tr>
+<tr><td style="padding:24px 28px">
+<div style="font-size:13px;color:#5E6B64">Pedido</div>
+<div style="font-size:20px;font-weight:700;color:#1F2E28;font-variant-numeric:tabular-nums">{escape(str(order.get("id", "")))}</div>
+<div style="display:inline-block;margin-top:8px;padding:3px 10px;border-radius:999px;border:1px solid {priority_color};color:{priority_color};font-size:12px;font-weight:600">{escape(str(order.get("priority", "") or "Normal"))}</div>
+<table role="presentation" cellspacing="0" cellpadding="0" style="margin-top:18px;font-size:14px;width:100%">{detail_rows}</table>
+<div style="margin-top:22px;font-family:Georgia,'Times New Roman',serif;font-size:17px;color:#1F2E28">Itens</div>
+<table role="presentation" cellspacing="0" cellpadding="0" style="margin-top:8px;width:100%;font-size:14px;border-top:1px solid #E5DED1">{rows}</table>
+{notes}
+<p style="margin:26px 0 0"><a href="{escape(APP_URL)}" style="display:inline-block;background:#1F2E28;color:#FFFFFF;text-decoration:none;padding:12px 22px;border-radius:10px;font-weight:600">Abrir no sistema</a></p>
+</td></tr>
+<tr><td style="padding:14px 28px;background:#FBF9F5;border-top:1px solid #E5DED1;color:#5E6B64;font-size:12px">Alerta automático do sistema de acessórios VERI para Master e Gestão.</td></tr>
+</table></td></tr></table></body></html>"""
+
+
+def format_br_date(value):
+    text = str(value or "")[:10]
+    try:
+        return datetime.strptime(text, "%Y-%m-%d").strftime("%d/%m/%Y")
+    except ValueError:
+        return text
 
 
 def update_order(order_id, updates, user):
@@ -1420,6 +1569,7 @@ def admin_update_user(master_user, payload):
     role = str(payload.get("role", "")).strip()
     origin = str(payload.get("origin", payload.get("sector", ""))).strip()
     phone = only_digits(payload.get("phone", ""))
+    email = validate_user_email(payload.get("email"))
 
     user = find_user(login)
     if not user:
@@ -1447,6 +1597,9 @@ def admin_update_user(master_user, payload):
         "phone": phone,
         "updatedAt": now_iso(),
     }
+    # Sem e-mail novo e sem a coluna no banco ("email" ausente do registro), não envia o campo.
+    if email or (email == "" and "email" in user):
+        updated["email"] = email
     save_user(updated)
     write_access_log({
         "userName": master_user.get("name", "Master"),
@@ -1508,6 +1661,21 @@ def admin_delete_user(master_user, payload):
     return stored_login
 
 
+EMAIL_PATTERN = re.compile(r"^[^@\s<>\"',;]+@[^@\s<>\"',;]+\.[A-Za-z]{2,}$")
+
+
+def validate_user_email(value):
+    """None quando o campo não veio (não altera); "" para apagar; senão o e-mail validado."""
+    if value is None:
+        return None
+    email = str(value).strip().lower()
+    if not email:
+        return ""
+    if len(email) > 160 or not EMAIL_PATTERN.match(email):
+        raise ValueError("Informe um e-mail válido.")
+    return email
+
+
 def create_management_user(master_user, payload):
     name = str(payload.get("name", "")).strip()
     sector = str(payload.get("sector", "")).strip()
@@ -1515,6 +1683,7 @@ def create_management_user(master_user, payload):
     password = str(payload.get("password", "") or "")
     role = str(payload.get("role", "consultant")).strip() or "consultant"
     login = str(payload.get("login", "")).strip() or name
+    email = validate_user_email(payload.get("email"))
 
     if not name or not sector or not password:
         raise ValueError("Preencha nome, setor e senha padrão.")
@@ -1545,6 +1714,8 @@ def create_management_user(master_user, payload):
         "createdAt": now,
         "updatedAt": now,
     }
+    if email:
+        user["email"] = email
     save_user(user)
     write_access_log({
         "userName": master_user.get("name", "Master"),
@@ -2243,6 +2414,7 @@ def public_user(user):
         "role": user.get("role", ""),
         "phone": user.get("phone", ""),
         "origin": user.get("origin", ""),
+        "email": user.get("email", "") or "",
         "mustChangePassword": bool(user.get("mustChangePassword")),
         "active": user.get("active") is not False,
         "createdAt": user.get("createdAt", ""),
@@ -2503,6 +2675,8 @@ def user_to_db(user):
         "password_salt": user.get("passwordSalt", ""),
         "must_change_password": bool(user.get("mustChangePassword")),
         "active": user.get("active") is not False,
+        # A coluna email é opcional no banco: só vai no corpo quando o usuário tem o campo.
+        **({"email": user.get("email") or None} if user.get("email") is not None else {}),
     }
 
 
@@ -2519,6 +2693,7 @@ def db_to_user(row):
         "active": row.get("active") is not False,
         "createdAt": row.get("created_at", ""),
         "updatedAt": row.get("updated_at", ""),
+        **({"email": row.get("email") or ""} if "email" in row else {}),
     }
 
 
